@@ -1,0 +1,37 @@
+/* ------------------------------------------------------------------ *
+ * Stat tiles — the headline numbers are not charts
+ * ------------------------------------------------------------------ */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.stat {
+  container-type: inline-size;
+  padding: 13px 15px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.stat-label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+/* Sized by the tile's own width, so 2.549.396,86 m fits a narrow tile instead
+   of running out of it. */
+.stat-value {
+  margin-top: 5px;
+  font-size: clamp(16px, 12.5cqi, 25px);
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+.stat-value .unit { margin-left: 3px; font-size: 13px; font-weight: 500; color: var(--ink-muted); }
+.stat-foot { margin-top: 3px; color: var(--ink-2); font-size: 12.5px; }
+.stat-foot .up { color: var(--good-text); }
+.stat-foot .down { color: var(--critical); }

@@ -1,0 +1,65 @@
+/* ------------------------------------------------------------------ *
+ * Charts
+ * ------------------------------------------------------------------ */
+.chart { min-width: 0; }
+.chart svg { display: block; width: 100%; max-width: 100%; height: auto; }
+.chart .empty { padding: 28px 0; color: var(--ink-muted); text-align: center; }
+
+.axis-label { fill: var(--ink-muted); font-size: 11px; }
+/* Trading-chart crosshair: dashed lines, value pills on the axes. */
+.xh-line { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 4 4; pointer-events: none; }
+.xh-pill { pointer-events: none; }
+.xh-pill rect { fill: var(--ink-2); }
+.xh-pill text { fill: #fff; font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Sideways drags belong to the crosshair; up and down still scroll the page. */
+.xh-surface { touch-action: pan-y; cursor: crosshair; }
+.axis-label.num { font-variant-numeric: tabular-nums; }
+.grid-line { stroke: var(--grid); stroke-width: 1; }
+.axis-line { stroke: var(--axis); stroke-width: 1; }
+.point-label { fill: var(--ink); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.col-value { fill: var(--ink); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.col-sub   { fill: var(--ink-muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.bar-value { fill: var(--ink-2); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.bar { fill: var(--series-1); }
+.bar-hit { fill: transparent; cursor: default; }
+.bar-row:hover .bar { fill: #1c5cab; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i {
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.legend .n { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 500; }
+/* Under a line chart: round keys, centred, as the lines carry dots. */
+.legend-dots { justify-content: center; gap: 8px 22px; margin-top: 8px; }
+.legend-dots i { width: 10px; height: 10px; border-radius: 50%; }
+
+.tooltip {
+  position: fixed;
+  z-index: 100;
+  max-width: 250px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(11, 11, 11, .12);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+.tooltip[hidden] { display: none; }
+.tooltip b { display: block; margin-bottom: 4px; font-weight: 600; }
+.tooltip .row { display: flex; justify-content: space-between; gap: 18px; color: var(--ink-2); }
+.tooltip .row span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+.tooltip .swatch {
+  display: inline-block; width: 8px; height: 8px;
+  margin-right: 6px; border-radius: 2px; background: currentColor;
+}

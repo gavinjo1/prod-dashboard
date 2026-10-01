@@ -1,0 +1,121 @@
+/* ------------------------------------------------------------------ *
+ * Tables
+ * ------------------------------------------------------------------ */
+.table-wrap { max-height: 560px; overflow: auto; margin: 0 -16px -16px; }
+.drawer .table-wrap { margin: 0; max-height: 65vh; }
+
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+table.data th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  background: var(--surface-sub);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+table.data td.nowrap { white-space: nowrap; }
+table.data td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+table.data tbody tr:last-child td { border-bottom: 0; }
+table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data tbody tr:hover { background: var(--surface-sub); }
+table.data tbody tr[tabindex] { cursor: pointer; }
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--ink); }
+th.sortable::after { content: ""; display: inline-block; width: 12px; }
+th.is-sorted-asc::after  { content: " ↑"; width: auto; }
+th.is-sorted-desc::after { content: " ↓"; width: auto; }
+
+.mc-name { font-weight: 500; }
+/* Targets beside the actuals: grey, but darker than a muted note. */
+.target-ref { color: #6b6a65; }
+.muted { color: var(--ink-muted); }
+
+/* an inline bar reads as a column of magnitudes, not decoration */
+.cell-bar {
+  display: flex; align-items: center; justify-content: flex-end; gap: 9px;
+}
+.cell-bar i {
+  height: 6px; border-radius: 2px;
+  background: var(--series-1); opacity: .85;
+}
+
+.dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.dot-good { background: var(--good); }
+.dot-warning { background: var(--warning); }
+.dot-critical { background: var(--critical); }
+
+/* a slim track, so the column reads as progress without shouting */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 150px;
+}
+.progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+.progress-fill { display: block; height: 100%; border-radius: 3px; background: var(--series-1); }
+.progress-fill.is-over { background: var(--warning); }
+.progress-pct { font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+
+/* ---- manual entry form ---- */
+.entry {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.entry .field input,
+.entry .field select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.entry .field input:focus-visible,
+.entry .field select:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
+.entry-wide { grid-column: span 2; }
+
+/* The two time boxes read as one value, so they share a cell. */
+.hours-pair { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hours-pair input { flex: 1 1 0; min-width: 0; }
+.entry-actions { display: flex; gap: 8px; }
+
+.btn-primary {
+  border-color: var(--series-1);
+  background: var(--series-1);
+  color: #fff;
+  font-weight: 500;
+}
+.btn-primary:hover { background: #1c5cab; color: #fff; }
+
+@media (max-width: 860px) {
+  .entry { grid-template-columns: 1fr 1fr; }
+  .entry-wide { grid-column: span 2; }
+  /* Two time boxes in half a phone screen clip their own text — give the
+     pair the full row instead. */
+  #eJamCustom { grid-column: span 2; }
+  .entry-actions { grid-column: span 2; }
+  .entry-actions .btn { flex: 1; justify-content: center; }
+}

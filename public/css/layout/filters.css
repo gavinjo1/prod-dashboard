@@ -1,0 +1,140 @@
+/* ------------------------------------------------------------------ *
+ * Filter bar
+ * ------------------------------------------------------------------ */
+.filters {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.filters.is-hidden { display: none; }
+
+.filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+/* Replaced by a single button on small screens; see the media query below. */
+.filters-toggle { display: none; }
+
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field > span {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.field input[type="date"] {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+}
+.field input[type="date"]:focus-visible,
+.picker-btn:focus-visible,
+.search:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
+
+.filter-actions { display: flex; gap: 8px; margin-left: auto; }
+
+.btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-2);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-sub); color: var(--ink); }
+
+/* ---- multi-select picker ---- */
+.picker { position: relative; }
+.picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 132px;
+  max-width: 210px;
+  padding: 0 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+}
+.picker-btn .val { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-btn .val.is-empty { color: var(--ink-muted); }
+.picker-btn .caret { color: var(--ink-muted); font-size: 10px; }
+.picker.is-set .picker-btn { border-color: var(--series-1); }
+
+.picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  /* Sized by its longest option, so "AJL TOYOTA 2 810 | AJL 2 AIR TUCKER"
+     stays on one line, with a ceiling so it never runs off a narrow screen. */
+  width: max-content;
+  min-width: 240px;
+  max-width: min(400px, 88vw);
+  max-height: 340px;
+  display: none;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(11, 11, 11, .10);
+}
+.picker.is-open .picker-menu { display: flex; }
+
+.picker-menu .search { margin: 8px; }
+.picker-list { overflow-y: auto; padding: 0 4px 6px; }
+.picker-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.picker-list label:hover { background: var(--surface-sub); }
+.picker-list input { accent-color: var(--series-1); margin: 0; flex: none; }
+.picker-list .opt { min-width: 0; line-height: 1.3; white-space: nowrap; }
+.picker-list .opt small {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 11.5px;
+}
+.picker-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.picker-foot button {
+  border: 0; background: none; padding: 0;
+  color: var(--series-1); cursor: pointer;
+}
+
+.search {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.card-head-row .search { width: 200px; }

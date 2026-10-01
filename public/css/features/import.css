@@ -1,0 +1,86 @@
+/* ------------------------------------------------------------------ *
+ * Import
+ * ------------------------------------------------------------------ */
+.drop {
+  padding: 30px 20px;
+  border: 1px dashed var(--axis);
+  border-radius: 8px;
+  background: var(--surface-sub);
+  text-align: center;
+}
+.drop.is-over { border-color: var(--series-1); background: #f2f7fd; }
+.drop.is-busy { opacity: .6; pointer-events: none; }
+.drop-main { margin: 0; }
+.drop-sub { margin: 7px auto 0; max-width: 45ch; color: var(--ink-muted); font-size: 12.5px; }
+
+.linkish {
+  border: 0; padding: 0; background: none;
+  color: var(--series-1); text-decoration: underline; cursor: pointer;
+}
+
+.result { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius); font-size: 13px; }
+.result-ok   { background: #f1f8f1; border: 1px solid #cfe6cf; }
+.result-err  { background: #fdf2f2; border: 1px solid #f0d2d2; }
+.result ul { margin: 7px 0 0; padding-left: 18px; }
+.result li { margin-top: 3px; }
+.result-title { font-weight: 600; }
+
+.swatch-band {
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 2px;
+  background: rgba(235, 104, 52, .16);
+  border-top: 1.5px solid #eb6834;
+}
+
+.note-line {
+  margin: 14px 0 0;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+
+.note { margin-top: 16px; font-size: 13px; color: var(--ink-2); }
+.note summary { cursor: pointer; color: var(--ink-2); }
+.note p { margin: 9px 0 0; }
+.note code {
+  padding: 1px 4px;
+  background: var(--surface-sub);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 11.5px;
+}
+.pill-ok  { background: #f1f8f1; color: var(--good-text); }
+.pill-err { background: #fdf2f2; color: var(--critical); }
+.pill-undone { background: var(--line-soft); color: var(--ink-muted); }
+
+/* ------------------------------------------------------------------ *
+ * Undo an import
+ * ------------------------------------------------------------------ */
+.batches { margin: 0 0 16px; }
+.batch {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-sub);
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.batch-file { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-meta { color: var(--ink-muted); white-space: nowrap; }
+.batch-undone { color: var(--ink-muted); font-style: italic; }
+.batch .btn { margin-left: auto; padding: 3px 10px; }
+
+/* An import that went through but left something to put right in the workbook. */
+.import-warn { color: #8a5a00; font-size: 12.5px; }

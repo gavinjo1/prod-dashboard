@@ -1,0 +1,73 @@
+/* ------------------------------------------------------------------ *
+ * Daily output against target
+ * ------------------------------------------------------------------ */
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: -4px 0 8px; font-size: 12px; color: var(--ink-2); }
+.chart-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg-area { width: 14px; height: 10px; border-radius: 2px; border-top: 2px solid var(--series-1); background: var(--series-1-fill); }
+.lg-line { width: 14px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.lg-good { border-color: var(--good); }
+.lg-bad  { border-color: var(--critical); }
+.lg-tri  { color: var(--critical); font-size: 10px; }
+.target-eff { flex-direction: row; align-items: center; gap: 8px; }
+/* Under the card title, left, where the chart's controls read first. */
+.target-row { margin: -4px 0 10px; font-size: 12.5px; }
+.target-eff > span:first-child { white-space: nowrap; }
+.target-eff-box { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.target-eff input {
+  width: 58px; height: 28px; padding: 0 6px; text-align: right;
+  border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface);
+}
+.target-eff input[readonly] { border-color: transparent; background: none; width: 34px; padding: 0; }
+
+/* Efficiency per machine type, under the daily chart: one card per layout
+   band, the sheet's own grouping, in its column order. */
+.eff-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.eff-card { border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.eff-card h3 { font-size: 12px; font-weight: 600; letter-spacing: .02em; margin: 0; }
+.eff-big { font-size: 22px; font-weight: 600; margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+.eff-sub { font-size: 11.5px; color: var(--ink-muted); }
+.eff-card ul { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line-soft); }
+.eff-card li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
+.eff-card li span:first-child { color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eff-card li b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A type is a button that opens its machines underneath. */
+.eff-card li.eff-type-row { display: block; padding: 0; }
+.eff-type, .eff-mc {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 4px;
+  margin: 0 -4px;
+  box-sizing: content-box;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.eff-type:hover, .eff-mc:hover { background: var(--surface-sub); }
+.eff-type:focus-visible, .eff-mc:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.eff-type > span { color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eff-caret { display: inline-block; width: 12px; font-style: normal; color: var(--ink-muted); }
+.eff-card ul.eff-machines {
+  margin: 2px 0 6px 12px;
+  padding: 2px 0 2px 8px;
+  border-top: 0;
+  border-left: 2px solid var(--line-soft);
+}
+.eff-machines li { padding: 0; }
+.eff-mc > span { color: var(--ink); font-variant-numeric: tabular-nums; }
+.is-good { color: var(--good-text); }
+.is-bad  { color: var(--critical); }
+
+/* A card head carrying two toggles: stack them rather than overflow. */
+.card-tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }

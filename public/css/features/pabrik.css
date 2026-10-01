@@ -1,0 +1,17 @@
+/* ------------------------------------------------------------------ *
+ * Pabrik: machine choice, and the drill-down drawers
+ * ------------------------------------------------------------------ */
+.pabrik-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 14px; margin: 0 0 14px; }
+.pabrik-bar .field { width: 220px; }
+.pabrik-bar .note-line { margin: 0 0 6px; }
+.drawer-wide { width: min(1180px, 96vw); }
+.drawer-head .card-sub { margin-top: 2px; }
+.drawer-body { max-height: 78vh; overflow: auto; padding: 4px 16px 16px; }
+.drawer-body .table-wrap { max-height: none; margin: 0 0 6px; }
+.drawer-h3 { font-size: 12.5px; font-weight: 600; margin: 14px 0 6px; color: var(--ink-2); }
+#loomTable td, #loomShiftTable td, #qMachineTable td, #qOrderTable td, #drawerTable td { white-space: nowrap; }
+#loomTable td.loom-style { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .pabrik-bar .field { width: 100%; }
+  #loomTable td.loom-style { max-width: 84px; }
+}

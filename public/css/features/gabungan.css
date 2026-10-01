@@ -1,0 +1,95 @@
+/* ------------------------------------------------------------------ *
+ * Semua — the combined report
+ * ------------------------------------------------------------------ */
+.gab-month select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.gab-head .stats { margin-top: 4px; }
+.gab-controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.gab-controls .segmented { height: 30px; align-items: center; }
+.seg:disabled { opacity: .4; cursor: default; }
+
+/* ---- the sheet itself ----
+   Laid out as the mill prints it, so someone holding the paper finds the same
+   cell in the same place. The sheet's colours are kept in spirit but lifted to
+   the dashboard's light tints: peach headers, a green PICK INSPECT column, the
+   amber total block, the red day count and the yellow total cell. */
+.gab-sheet { --gab-head: #fbe3d4; --gab-green: #e8f3e0; --gab-green-h: #cfe6bf;
+             --gab-tot: #fff3d6; --gab-yellow: #fff0a8; --gab-red: #f6c9c9; }
+
+.gab-bar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.gab-title { text-align: center; margin: 0 0 12px; }
+.gab-title h2 { font-size: 15px; letter-spacing: .01em; }
+.gab-title p {
+  margin: 3px 0 0;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.gab-red { color: var(--critical); }
+
+/* The whole month shows at once, as on paper; only a narrow screen scrolls,
+   and then sideways. */
+.gab-wrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
+
+table.gab-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+table.gab-table th,
+table.gab-table td {
+  border: 1px solid var(--grid);
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+table.gab-table th {
+  background: var(--gab-head);
+  font-weight: 600;
+  font-size: 11.5px;
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1.25;
+}
+table.gab-table th.gab-green-h { background: var(--gab-green-h); }
+table.gab-table td.num { text-align: right; }
+table.gab-table td.b { font-weight: 600; }
+table.gab-table td.gab-date { text-align: right; color: var(--ink-2); }
+table.gab-table td.gab-green { background: var(--gab-green); }
+table.gab-table tbody tr:hover td { background: var(--surface-sub); }
+table.gab-table tbody tr:hover td.gab-green { background: var(--gab-green-h); }
+
+table.gab-table tr.gab-gap td { border: 0; height: 14px; padding: 0; }
+table.gab-table tr.gab-tot td { background: var(--gab-tot); }
+table.gab-table tr.gab-tot td.gab-green { background: var(--gab-green); }
+table.gab-table td.gab-yellow { background: var(--gab-yellow) !important; }
+table.gab-table td.gab-mid { vertical-align: middle; }
+table.gab-table td.gab-days {
+  background: var(--gab-red) !important;
+  color: #8a1c1c;
+  font-weight: 700;
+  text-align: center;
+}
+table.gab-table td.gab-dim { background: var(--surface) !important; font-weight: 700; text-align: center; }
+table.gab-table td.gab-label {
+  font-weight: 600;
+  font-size: 11.5px;
+  text-align: center;
+  white-space: normal;
+}
+table.gab-table td.gab-big { font-size: 14px; text-align: center; }
+table.gab-table td.gab-blank { background: var(--surface) !important; border-color: transparent; }
+table.gab-table tr.gab-left td,
+table.gab-table tr.gab-prev td {
+  border: 0;
+  padding: 8px 4px 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+table.gab-table tr.gab-prev td { font-weight: 700; color: var(--ink); padding-top: 14px; }

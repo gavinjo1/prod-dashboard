@@ -1,0 +1,75 @@
+/* ------------------------------------------------------------------ *
+ * Drawer
+ * ------------------------------------------------------------------ */
+.drawer {
+  width: min(880px, 92vw);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(11, 11, 11, .18);
+}
+.drawer::backdrop { background: rgba(11, 11, 11, .28); }
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-head h2 { font-size: 14px; }
+
+/* ------------------------------------------------------------------ *
+ * Change password
+ * ------------------------------------------------------------------ */
+.pw-dialog {
+  width: min(380px, calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.pw-dialog::backdrop { background: rgba(11, 11, 11, .28); }
+.pw-dialog h2 { font-size: 15px; }
+.pw-dialog .card-sub { margin: 4px 0 16px; }
+.pw-dialog .field { margin-bottom: 12px; }
+.pw-dialog input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.pw-dialog input:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
+.pw-msg { min-height: 1em; margin: 4px 0 12px; font-size: 12.5px; }
+.pw-msg.is-err { color: var(--critical); }
+.pw-msg.is-ok  { color: var(--good-text); }
+.pw-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.row-action { background: none; border: 0; padding: 0; cursor: pointer; color: var(--series-1); }
+.row-action:hover { text-decoration: underline; }
+.row-actions { display: flex; gap: 12px; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ *
+ * Editing one row
+ * ------------------------------------------------------------------ */
+.edit-dialog { width: min(520px, calc(100vw - 32px)); }
+.edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.edit-grid .field { margin: 0; }
+.edit-wide { grid-column: span 2; }
+.edit-warn {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: #fff6e0;
+  color: #7a5200;
+  font-size: 12px;
+}
+.edit-warn:empty { display: none; }
+.edit-spacer { flex: 1; }
+.edit-del { color: var(--critical); }
+.pw-dialog .pw-actions { align-items: center; }
+@media (max-width: 480px) {
+  .edit-grid { grid-template-columns: 1fr; }
+  .edit-wide { grid-column: auto; }
+}

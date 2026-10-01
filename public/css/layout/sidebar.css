@@ -1,0 +1,202 @@
+/* ------------------------------------------------------------------ *
+ * Sidebar and top bar
+ *
+ * The family and the tabs live in a column on the left. On a laptop the ☰
+ * button folds it away to give the tables the full width; on a phone it is a
+ * drawer over the page, closed until asked for.
+ * ------------------------------------------------------------------ */
+:root { --nav-w: 208px; }
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 70;
+  width: var(--nav-w);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px 10px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  transition: transform .18s ease;
+}
+.shell { margin-left: var(--nav-w); min-width: 0; transition: margin-left .18s ease; }
+body.nav-collapsed .sidebar { transform: translateX(-100%); }
+body.nav-collapsed .shell { margin-left: 0; }
+.sidebar-scrim { display: none; }
+
+.brand { display: flex; align-items: center; gap: 9px; padding: 0 4px; }
+.brand-mark {
+  flex: none;
+  width: 9px; height: 9px; border-radius: 2px;
+  background: var(--series-1);
+}
+/* The family picker stands where the name was, so it reads as the title. */
+.brand-select {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 26px 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  cursor: pointer;
+}
+.brand-select:hover { border-color: var(--line); }
+.brand-select:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
+
+.tabs { display: flex; flex-direction: column; gap: 2px; }
+.tab {
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.tab:hover { background: var(--surface-sub); color: var(--ink); }
+.tab.is-active { background: #eef3fb; color: #1c5cab; font-weight: 500; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.menu-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.menu-btn:hover { background: var(--surface-sub); color: var(--ink); }
+.page-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ---- search over everything ---- */
+.gsearch { position: relative; margin-left: auto; }
+.gsearch-input {
+  width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.gsearch-input::placeholder { color: var(--ink-muted); }
+.gsearch-input:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
+
+.gsearch-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 440px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 32px rgba(11, 11, 11, .14);
+}
+.gsearch-panel[hidden] { display: none; }
+
+.gsearch-status {
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.gsearch-list { overflow-y: auto; padding: 4px; }
+
+.gs-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.gs-row:hover, .gs-row:focus-visible { background: var(--surface-sub); outline: none; }
+.gs-main { flex: 1; min-width: 0; }
+/* Both lines must be blocks: text-overflow does nothing on an inline span, so
+   the subtitle would run on underneath the match tag instead of clipping. */
+.gs-main > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-mo { font-weight: 600; font-variant-numeric: tabular-nums; }
+.gs-cust { margin-left: 8px; color: var(--ink-2); }
+.gs-sub {
+  margin-top: 2px;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.gs-right { text-align: right; white-space: nowrap; }
+.gs-prod { font-variant-numeric: tabular-nums; font-size: 13px; }
+.gs-tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 20px;
+  background: #eef3fb;
+  color: #1c5cab;
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Signed-in user
+ * ------------------------------------------------------------------ */
+.whoami {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: auto;
+  padding: 12px 6px 2px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  color: var(--ink-muted);
+}
+.whoami .linkish { margin-left: auto; }
+.whoami-name { color: var(--ink-2); }
+
+/* Shift hours change most weeks, so the pair reads as one value. */
+.data .hours { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------ *
+ * Roles
+ * ------------------------------------------------------------------ */
+.role-chip {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-sub);
+  border: 1px solid var(--line-soft);
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.role-chip[data-role="admin"] { color: var(--series-1); border-color: var(--series-1); }
+
+.role-pick { padding: 3px 6px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface); }
+.row-danger { color: var(--critical); background: none; border: 0; cursor: pointer; padding: 0; }
+.row-danger:hover { text-decoration: underline; }

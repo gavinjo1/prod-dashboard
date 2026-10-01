@@ -1,0 +1,58 @@
+/* ------------------------------------------------------------------ *
+ * Tokens
+ * Light only, on purpose: this runs on mill office screens and is read
+ * next to printed reports. Values are the validated reference palette.
+ * ------------------------------------------------------------------ */
+:root {
+  color-scheme: light;
+
+  --plane:       #f7f7f5;
+  --surface:     #ffffff;
+  --surface-sub: #fafaf8;
+
+  --ink:         #0b0b0b;
+  --ink-2:       #52514e;
+  --ink-muted:   #898781;
+
+  --line:        rgba(11, 11, 11, .10);
+  --line-soft:   #ebebe6;
+  --grid:        #e1e0d9;
+  --axis:        #c3c2b7;
+
+  --series-1:    #2a78d6;   /* the one series colour: magnitude */
+  --series-1-fill: rgba(42, 120, 214, .12);
+  --series-2:    #eb6834;   /* categorical slots 2 and 3, for charts with */
+  --series-3:    #1baf7a;   /* more than one line                         */
+
+  --grade-a:     #1c5cab;
+  --grade-b:     #5598e7;
+  --grade-bs:    #d03b3b;
+  --grade-rk:    #ec835a;
+
+  --good:        #0ca30c;
+  --warning:     #fab219;
+  --critical:    #d03b3b;
+  --good-text:   #006300;
+
+  --radius:      6px;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+/* Layout rules below set display, which outranks the UA rule behind the hidden
+   attribute — without this, `el.hidden = true` leaves the element on screen. */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font: 14px/1.5 var(--sans);
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.005em; }
+
+button, input, select { font: inherit; color: inherit; }

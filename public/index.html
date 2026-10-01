@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laporan Mesin</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<!-- Navigation on the left: the family, the tabs and who is signed in.
+     Folds away on a laptop at the ☰ button, and is a drawer on a phone. -->
+<aside class="sidebar" id="sidebar" aria-label="Navigasi">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <select class="brand-select" id="family" aria-label="Jenis mesin">
+      <option value="semua">Semua</option>
+      <option value="ajl">AJL</option>
+      <option value="shuttle">Shuttle</option>
+      <option value="rapier">Rapier</option>
+    </select>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-tab="gabungan" data-family="semua" role="tab">Laporan Gabungan</button>
+    <button class="tab is-active" data-tab="production" data-family="ajl rapier shuttle" role="tab">Produksi</button>
+    <button class="tab" data-tab="quality" data-family="ajl rapier shuttle" role="tab">Kualitas</button>
+    <button class="tab" data-tab="import" data-family="semua ajl rapier shuttle" role="tab">Import</button>
+    <button class="tab" data-tab="pabrik" data-family="ajl" role="tab">Pabrik</button>
+    <button class="tab" data-tab="users" role="tab" id="tabUsers" hidden>Pengguna</button>
+  </nav>
+  <div class="whoami" id="whoami" hidden>
+    <span class="whoami-name" id="whoamiName"></span>
+    <span class="role-chip" id="whoamiRole"></span>
+    <button class="linkish" type="button" id="btnLogout">Keluar</button>
+  </div>
+</aside>
+<div class="sidebar-scrim" id="sidebarScrim"></div>
+
+<div class="shell">
+<header class="topbar">
+  <button class="menu-btn" type="button" id="menuBtn" aria-controls="sidebar"
+          aria-expanded="true" aria-label="Tampilkan / sembunyikan menu">☰</button>
+  <h1 class="page-title" id="pageTitle">Produksi</h1>
+  <div class="gsearch" id="gsearch">
+    <input type="search" id="gsInput" class="gsearch-input" autocomplete="off"
+           placeholder="Cari customer, order, kain, mesin…"
+           aria-label="Cari" aria-expanded="false">
+    <div class="gsearch-panel" id="gsPanel" hidden>
+      <p class="gsearch-status" id="gsStatus"></p>
+      <div class="gsearch-list" id="gsList"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ------------------------------------------------------------------ -->
+<section class="filters" id="filterBar">
+  <button class="filters-toggle" id="filtersToggle" aria-expanded="false" aria-controls="filterFields">
+    <span class="filters-toggle-label">Filter</span>
+    <span class="filters-summary" id="filtersSummary"></span>
+    <span class="caret">▾</span>
+  </button>
+
+  <div class="filter-fields" id="filterFields">
+  <label class="field">
+    <span>Dari</span>
+    <input type="date" id="fFrom">
+  </label>
+  <label class="field">
+    <span>Sampai</span>
+    <input type="date" id="fTo">
+  </label>
+  <div class="field" data-pick="shift"><span>Shift</span><div class="picker" id="pShift"></div></div>
+  <div class="field" data-pick="jam"><span>Jam shift</span><div class="picker" id="pJam"></div></div>
+  <div class="field" data-pick="group"><span>Kelompok mesin</span><div class="picker" id="pGroup"></div></div>
+  <div class="field" data-pick="type"><span>Tipe mesin</span><div class="picker" id="pType"></div></div>
+  <div class="field" data-pick="machine"><span>No. mesin</span><div class="picker" id="pMachine"></div></div>
+  <div class="field" data-pick="fabric"><span>Kain</span><div class="picker" id="pFabric"></div></div>
+  <div class="field" data-pick="mo"><span>Order</span><div class="picker" id="pMo"></div></div>
+  <div class="filter-actions">
+    <button class="btn btn-quiet" id="btnReset">Reset</button>
+    <a class="btn btn-quiet" id="btnExportXlsx" href="#" download>Export Excel</a>
+  </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<main>
+
+<!-- Semua: the combined monthly report across every loom family, laid out
+     the way the mill's LAPORAN PRODUKSI GABUNGAN sheet is. -->
+<div class="panel" id="panel-gabungan">
+  <section class="card" id="gabEmpty" hidden>
+    <div class="card-head">
+      <h2>Belum ada laporan gabungan</h2>
+      <p class="card-sub">Import laporan harian di tab Import.</p>
+    </div>
+  </section>
+
+  <div id="gabBody">
+    <!-- The mill's sheet first, laid out as it is printed: same columns, same
+         rows, same total block, the previous month underneath. -->
+    <section class="card gab-sheet">
+      <div class="gab-bar">
+        <div class="gab-controls">
+          <div class="field"><span>Sumber</span>
+            <div class="segmented" role="group" aria-label="Sumber angka" id="gabSource">
+              <button class="seg" data-src="auto">Otomatis</button>
+              <button class="seg" data-src="file">File GABUNGAN</button>
+            </div>
+          </div>
+          <label class="field gab-month"><span>Bulan</span><select id="gabMonth"></select></label>
+          <a class="btn" id="gabExport" href="#" download>Export Excel</a>
+        </div>
+      </div>
+
+      <header class="gab-title">
+        <h2 id="gabTitle">LAPORAN PRODUKSI GABUNGAN</h2>
+        <p id="gabSub">SHUTTLE - RAPIER - AJL TOYOTA ( AJL TOYOTA LAMA + <span class="gab-red">AJL TOYOTA BARU</span> )</p>
+      </header>
+
+      <div class="gab-wrap">
+        <table class="gab-table" id="gabTable">
+          <thead>
+            <tr>
+              <th rowspan="2">TGL</th>
+              <th colspan="2">BS</th>
+              <th colspan="2">ACTUAL HASIL KAIN<br>GABUNGAN (A+B)</th>
+              <th>PRODUKSI</th>
+              <th rowspan="2">PICK<br>MESIN</th>
+              <th colspan="5">PICK MESIN/BULAN</th>
+              <th colspan="4">PICK KAIN INSPECT/BULAN</th>
+              <th rowspan="2" class="gab-green-h">PICK<br>INSPECT<br>PERHARI</th>
+            </tr>
+            <tr>
+              <th>PJG</th><th>%</th>
+              <th>METER</th><th>%</th>
+              <th>100%</th>
+              <th>SHUTTLE</th><th>RAPIER</th><th>AJL</th><th>PICK MC</th><th>PICK MC X PROD</th>
+              <th>SHUTTLE</th><th>RAPIER</th><th>AJL 1+2+3+4</th><th>PICK KAIN INSPECT X<br>PROD</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+      <p class="note-line" id="gabNote"></p>
+    </section>
+
+    <!-- Then the same month as pictures. -->
+    <div class="stats" id="gabStats"></div>
+
+    <figure class="card">
+      <figcaption class="card-head">
+        <h2>Hasil kain per hari</h2>
+      </figcaption>
+      <div class="chart" id="gabChart"></div>
+    </figure>
+
+    <div class="grid grid-even">
+      <figure class="card">
+        <figcaption class="card-head">
+          <h2>Efisiensi per hari</h2>
+        </figcaption>
+        <div class="chart" id="gabEffChart"></div>
+      </figure>
+      <figure class="card">
+        <figcaption class="card-head">
+          <h2>BS per hari</h2>
+        </figcaption>
+        <div class="chart" id="gabBsChart"></div>
+      </figure>
+    </div>
+
+    <div class="grid grid-even">
+      <figure class="card">
+        <figcaption class="card-head">
+          <h2>Pick mesin per hari</h2>
+        </figcaption>
+        <div class="chart" id="gabPickChart"></div>
+      </figure>
+      <figure class="card">
+        <figcaption class="card-head">
+          <h2>Pick kain inspect per hari</h2>
+        </figcaption>
+        <div class="chart" id="gabPiChart"></div>
+      </figure>
+    </div>
+  </div>
+</div>
+
+<!-- Shuttle and Rapier: no daily report is loaded for them yet. -->
+<div class="panel" id="panel-kosong">
+  <section class="card">
+    <div class="card-head">
+      <h2 id="kosongTitle">Belum ada data</h2>
+      <p class="card-sub" id="kosongSub"></p>
+    </div>
+  </section>
+</div>
+
+<div class="panel is-active" id="panel-production">
+  <div class="stats" id="stats"></div>
+
+  <section class="card" id="orderInfo" hidden>
+    <div class="card-head">
+      <h2>Detail order</h2>
+      <p class="card-sub" id="orderInfoSub"></p>
+    </div>
+    <div class="table-wrap">
+      <table class="data" id="orderInfoTable">
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Customer</th>
+            <th>Kain</th>
+            <th class="num">Pick</th>
+            <th class="num">Total order (m)</th>
+            <th class="num">Akumulasi (m)</th>
+            <th class="num">Sisa order (m)</th>
+            <th>Progress</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="orderHistory" hidden>
+      <div class="card-head" style="margin-top:22px">
+        <h2 id="orderHistoryTitle">Per hari</h2>
+      </div>
+      <div class="chart" id="chartOrderHistory"></div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table class="data" id="orderHistoryTable">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th class="num">Output hari itu (m)</th>
+              <th class="num">Akumulasi (m)</th>
+              <th class="num">Sisa order (m)</th>
+              <th class="num">Progress</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid">
+    <figure class="card">
+      <figcaption class="card-head card-head-row">
+        <div>
+          <h2 id="trendTitle">Output harian</h2>
+        </div>
+        <div class="segmented" role="group" aria-label="Periode" id="trendPeriod">
+          <button class="seg is-active" data-tperiod="day">Harian</button>
+          <button class="seg" data-tperiod="week">Mingguan</button>
+          <button class="seg" data-tperiod="month">Bulanan</button>
+          <button class="seg" data-tperiod="year">Tahunan</button>
+        </div>
+      </figcaption>
+
+      <!-- The family's efficiency target: each family keeps its own. An admin
+           changes it here; everyone else reads it. -->
+      <label class="field target-eff target-row"><span id="targetEffLabel">Target efisiensi</span>
+        <span class="target-eff-box"><input id="targetEff" type="number" min="1" max="100" step="1"
+          aria-describedby="chartTrendNote"> %</span></label>
+
+      <div class="chart" id="chartTrend"></div>
+      <p class="note-line" id="chartTrendNote"></p>
+      <div class="eff-cards" id="effCards"></div>
+    </figure>
+  </div>
+
+  <div class="grid grid-3">
+    <figure class="card">
+      <figcaption class="card-head card-head-row">
+        <div>
+          <h2 id="chartGroupTitle">Output per</h2>
+          <p class="card-sub" id="chartGroupNote"></p>
+        </div>
+        <div class="card-tools">
+          <div class="segmented" role="group" aria-label="Output per">
+            <button class="seg is-active" data-dim="group">Kelompok</button>
+            <button class="seg" data-dim="type">Tipe</button>
+            <button class="seg" data-dim="fabric">Kain</button>
+          </div>
+          <div class="segmented" role="group" aria-label="Rentang waktu" data-range-for="group">
+            <button class="seg" data-range="day">Hari terakhir</button>
+            <button class="seg" data-range="7">7 hari</button>
+            <button class="seg is-active" data-range="month">1 bulan</button>
+          </div>
+        </div>
+      </figcaption>
+      <div class="chart" id="chartGroup"></div>
+    </figure>
+    <figure class="card">
+      <figcaption class="card-head card-head-row">
+        <div>
+          <h2>Per shift</h2>
+          <p class="card-sub" id="chartShiftNote"></p>
+        </div>
+        <div class="segmented" role="group" aria-label="Rentang waktu" data-range-for="shift">
+          <button class="seg" data-range="day">Hari terakhir</button>
+          <button class="seg" data-range="7">7 hari</button>
+          <button class="seg is-active" data-range="month">1 bulan</button>
+        </div>
+      </figcaption>
+      <div class="chart" id="chartShift"></div>
+    </figure>
+    <figure class="card">
+      <figcaption class="card-head"><h2>Alasan berhenti</h2></figcaption>
+      <div class="chart" id="chartStop"></div>
+    </figure>
+  </div>
+
+  <section class="card">
+    <div class="card-head card-head-row">
+      <div>
+        <h2>Mesin</h2>
+      </div>
+      <input type="search" id="mcSearch" class="search" placeholder="Cari mesin, tipe, kelompok…">
+    </div>
+    <div class="table-wrap">
+      <table class="data" id="machineTable">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="machine">Mesin</th>
+            <th>Tipe</th>
+            <th>Kelompok</th>
+            <th class="num sortable is-sorted-desc" data-sort="produksi">Output (m)</th>
+            <th class="num sortable" data-sort="achieved" title="Output ÷ output target di RPM target">Capai target</th>
+            <th class="num sortable" data-sort="avg_day">Rata-rata / hari</th>
+            <th class="num sortable" data-sort="rpm">Rata-rata RPM</th>
+            <th class="num sortable" data-sort="stoppages">Berhenti</th>
+            <th class="num">Shift kosong</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<div class="panel" id="panel-quality">
+  <div class="stats" id="qStats"></div>
+
+  <figure class="card">
+    <figcaption class="card-head card-head-row">
+      <div>
+        <h2 id="qChartTitle">Grade per hari</h2>
+      </div>
+      <div class="segmented" role="group" aria-label="Periode" id="qPeriod">
+        <button class="seg is-active" data-qperiod="day">Harian</button>
+        <button class="seg" data-qperiod="week">Mingguan</button>
+        <button class="seg" data-qperiod="month">Bulanan</button>
+        <button class="seg" data-qperiod="year">Tahunan</button>
+      </div>
+    </figcaption>
+    <div class="chart" id="chartQuality"></div>
+    <p class="note-line" id="qPeriodNote"></p>
+  </figure>
+
+  <section class="card">
+    <div class="card-head card-head-row">
+      <div>
+        <h2>Kualitas per kain</h2>
+      </div>
+      <input type="search" id="qFabricSearch" class="search" placeholder="Cari kode kain…">
+    </div>
+    <div class="table-wrap">
+      <table class="data" id="qFabricTable">
+        <thead>
+          <tr>
+            <th class="sortable" data-qsort="label">Kain</th>
+            <th class="num sortable is-sorted-desc" data-qsort="total">Diperiksa (m)</th>
+            <th class="num sortable" data-qsort="a_pct">A</th>
+            <th class="num sortable" data-qsort="b_pct">B</th>
+            <th class="num sortable" data-qsort="bs">BS (m)</th>
+            <th class="num sortable" data-qsort="rk">RK (m)</th>
+            <th class="num sortable" data-qsort="defect_pct">BS+RK</th>
+            <th class="num sortable" data-qsort="orders">Order</th>
+            <th class="num sortable" data-qsort="machines">Mesin</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2 id="qTableTitle">Detail per hari</h2></div>
+    <div class="table-wrap">
+      <table class="data" id="qDailyTable">
+        <thead>
+          <tr><th id="qTableHead">Tanggal</th><th class="num">A</th><th class="num">B</th><th class="num">BS</th><th class="num">RK</th><th class="num">Total</th><th class="num">A+B</th><th class="num">BS+RK</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<div class="panel" id="panel-import">
+  <section class="card">
+    <div class="card-head">
+      <h2>Input satu shift</h2>
+    </div>
+    <p class="note-line" id="entryNoFamily" hidden>Pilih AJL, Rapier atau Shuttle dulu untuk input manual.</p>
+
+    <form class="entry" id="entryForm" autocomplete="off">
+      <label class="field"><span>Tanggal</span>
+        <input type="date" id="eTgl" required></label>
+      <label class="field"><span>Shift</span>
+        <select id="eShift" required><option>A</option><option>B</option><option>C</option></select></label>
+      <label class="field"><span>Jam shift</span>
+        <select id="eJamSlot"></select></label>
+      <div class="field" id="eJamCustom" hidden><span>Mulai – selesai</span>
+        <div class="hours-pair">
+          <input type="time" id="eJamMulai" aria-label="Jam mulai">
+          <input type="time" id="eJamSelesai" aria-label="Jam selesai">
+        </div>
+      </div>
+      <label class="field"><span>Mesin</span>
+        <input id="eMc" list="dlMachines" placeholder="A1" required></label>
+      <label class="field"><span>Order</span>
+        <input id="eMo" list="dlOrders" placeholder="MO/UW/…"></label>
+      <label class="field"><span>Output (m)</span>
+        <input id="eProd" type="number" step="0.01" min="0" placeholder="0"></label>
+      <label class="field"><span>RPM</span>
+        <input id="eRpm" type="number" step="1" min="0"></label>
+      <label class="field"><span>RPM target</span>
+        <input id="eTarget" type="number" step="1" min="0"></label>
+      <label class="field entry-wide"><span>Catatan (KET BB)</span>
+        <input id="eKet" placeholder="TYING, BONGKAR HB, …"></label>
+
+      <div class="entry-actions">
+        <button class="btn btn-primary" type="submit" id="eSave">Simpan</button>
+        <button class="btn btn-quiet" type="button" id="eClear">Kosongkan</button>
+      </div>
+    </form>
+
+    <p class="note-line" id="entryAuto"></p>
+    <div id="entryResult"></div>
+
+    <datalist id="dlMachines"></datalist>
+    <datalist id="dlOrders"></datalist>
+  </section>
+
+  <div class="grid grid-even">
+    <section class="card">
+      <div class="card-head">
+        <h2>Upload laporan</h2>
+      </div>
+
+      <p class="note-line" id="importFamily"></p>
+
+      <div class="drop" id="drop">
+        <input type="file" id="fileInput" accept=".xlsx,.xlsm,.xlsb,.xls,.ods,.csv,.tsv,.txt,.json" hidden>
+        <p class="drop-main">Tarik file ke sini, atau <button class="linkish" id="browse">pilih file</button></p>
+      </div>
+
+      <div id="importResult"></div>
+
+      <details class="note">
+        <summary>Kolom yang dibutuhkan</summary>
+        <p><strong>Laporan harian</strong>: <code>TGL</code>, <code>NO MC</code>, <code>PRODUKSI</code>.</p>
+        <p><strong>Grade</strong>: <code>TGL</code>, <code>MO</code>, <code>A</code>.</p>
+      </details>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Import terakhir</h2></div>
+      <div class="table-wrap">
+        <div class="batches" id="batches"></div>
+
+        <table class="data" id="importLog">
+          <thead>
+            <tr><th>Waktu</th><th>File</th><th>Sheet</th><th class="num">Ditulis</th><th class="num">Dilewati</th><th>Oleh</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Accounts. Only ever rendered for an admin; the API refuses the rest. -->
+<div class="panel" id="panel-users">
+  <!-- Everyone's own account. Open to every role: an operator or viewer must
+       be able to change their own password without an admin. -->
+  <section class="card">
+    <div class="card-head card-head-row">
+      <div>
+        <h2>Akun saya</h2>
+        <p class="card-sub" id="myAccount"></p>
+      </div>
+      <button class="btn" type="button" id="btnPassword">Ganti kata sandi</button>
+    </div>
+  </section>
+
+  <!-- Managing other people's accounts: admins only. The API refuses the rest. -->
+  <div id="usersAdmin" hidden>
+  <section class="card">
+    <div class="card-head">
+      <h2>Buat akun</h2>
+      <p class="card-sub"><em>Viewer</em> hanya membaca · <em>operator</em> mengisi data dan export ·
+        <em>admin</em> juga mengelola akun.</p>
+    </div>
+
+    <form class="entry" id="newUserForm" autocomplete="off">
+      <label class="field"><span>Nama pengguna</span>
+        <input id="nuUser" required pattern="[A-Za-z0-9._-]{3,32}" placeholder="mis. budi.s"
+               autocomplete="off"></label>
+      <label class="field"><span>Nama lengkap</span>
+        <input id="nuNama" placeholder="opsional" autocomplete="off"></label>
+      <label class="field"><span>Kata sandi</span>
+        <input id="nuPass" required minlength="8" placeholder="minimal 8 karakter"
+               autocomplete="new-password"></label>
+      <label class="field"><span>Peran</span>
+        <select id="nuRole">
+          <option value="viewer">viewer</option>
+          <option value="operator">operator</option>
+          <option value="admin">admin</option>
+        </select></label>
+      <div class="entry-actions">
+        <button class="btn btn-primary" type="submit" id="nuSave">Buat akun</button>
+        <button class="btn btn-quiet" type="button" id="nuGen"
+                title="Isi kata sandi acak yang kuat">Sandi acak</button>
+      </div>
+    </form>
+
+    <p class="note-line" id="nuMsg"></p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Pengguna</h2>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data" id="usersTable">
+        <thead>
+          <tr><th>Nama pengguna</th><th>Nama</th><th>Peran</th><th>Dibuat</th><th>Terakhir masuk</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <p class="note-line"></p>
+  </section>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Pabrik: the looms' own monitoring export. Separate database, separate
+     router, nothing shared with the panels above. -->
+<div class="panel" id="panel-pabrik">
+  <section class="card" id="pabrikEmpty" hidden>
+    <div class="card-head">
+      <h2>Belum ada data mesin</h2>
+      <p class="card-sub">Upload Shift Report dari sistem monitoring mesin di bawah.</p>
+    </div>
+  </section>
+
+  <div class="pabrik-bar" id="pabrikBar">
+    <div class="field"><span>No. mesin</span><div class="picker" id="pLoom"></div></div>
+  </div>
+
+  <div class="stats" id="pabrikStats"></div>
+
+  <div class="grid">
+    <figure class="card">
+      <figcaption class="card-head">
+        <h2>Efisiensi per hari</h2>
+      </figcaption>
+      <div class="chart" id="chartLoomDaily"></div>
+      <p class="note-line" id="loomDailyNote"></p>
+    </figure>
+  </div>
+
+  <div class="grid grid-2">
+    <figure class="card">
+      <figcaption class="card-head">
+        <h2>Penyebab mesin berhenti</h2>
+      </figcaption>
+      <div class="chart" id="chartLoomStops"></div>
+    </figure>
+
+    <figure class="card">
+      <figcaption class="card-head">
+        <h2>Efisiensi per waktu shift</h2>
+      </figcaption>
+      <div class="chart" id="chartLoomWaktu"></div>
+    </figure>
+  </div>
+
+  <section class="card">
+    <div class="card-head card-head-row">
+      <div>
+        <h2>Mesin: target dan stop</h2>
+      </div>
+      <input type="search" id="loomSearch" class="search" placeholder="Cari mesin atau kain…">
+    </div>
+    <div class="table-wrap">
+      <table class="data" id="loomTable">
+        <thead>
+          <tr>
+            <th class="sortable" data-lsort="loom">Mesin</th>
+            <th>Kain</th>
+            <th class="num sortable is-sorted-asc" data-lsort="achieved" title="Output ÷ target di RPM target">Capai target</th>
+            <th class="num sortable" data-lsort="pagi" title="07:00–15:00">Pagi</th>
+            <th class="num sortable" data-lsort="siang" title="15:00–23:00">Siang</th>
+            <th class="num sortable" data-lsort="malam" title="23:00–07:00">Malam</th>
+            <th class="num sortable" data-lsort="output">Output (m)</th>
+            <th class="num sortable" data-lsort="target">Target (m)</th>
+            <th class="num sortable" data-lsort="warp">Stop lusi</th>
+            <th class="num sortable" data-lsort="weft">Stop pakan</th>
+            <th class="num sortable" data-lsort="other">Stop lain</th>
+            <th class="num sortable" data-lsort="effic">Efisiensi</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="note-line" id="loomTableNote"></p>
+  </section>
+
+  <div class="grid grid-even">
+    <section class="card">
+      <div class="card-head">
+        <h2>Upload export mesin</h2>
+      </div>
+      <div class="drop" id="loomDrop">
+        <input type="file" id="loomFile" accept=".xls,.xlsx,.xlsm,.xlsb,.csv,.tsv,.txt,.ods" hidden>
+        <p class="drop-main">Tarik file ke sini, atau <button class="linkish" id="loomBrowse">pilih file</button></p>
+      </div>
+      <div id="loomResult"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Import mesin terakhir</h2></div>
+      <div class="table-wrap">
+        <table class="data" id="loomLog">
+          <thead><tr><th>Waktu</th><th>File</th><th>Periode</th><th class="num">Baris</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+</main>
+</div>
+
+<div class="tooltip" id="tooltip" hidden></div>
+
+<!-- Change your own password. The old one is asked for even though you are
+     signed in: a browser left open must not be enough to take the account. -->
+<dialog class="pw-dialog" id="pwDialog" aria-labelledby="pwTitle">
+  <form id="pwForm" method="dialog" autocomplete="on">
+    <h2 id="pwTitle">Ganti kata sandi</h2>
+    <p class="card-sub">Perangkat lain yang sedang masuk dengan akun ini akan dikeluarkan.</p>
+
+    <input type="text" id="pwUser" autocomplete="username" hidden>
+    <label class="field"><span>Kata sandi lama</span>
+      <input type="password" id="pwCurrent" autocomplete="current-password" required></label>
+    <label class="field"><span>Kata sandi baru</span>
+      <input type="password" id="pwNew" autocomplete="new-password" minlength="8" required
+             placeholder="minimal 8 karakter"></label>
+    <label class="field"><span>Ulangi kata sandi baru</span>
+      <input type="password" id="pwConfirm" autocomplete="new-password" minlength="8" required></label>
+
+    <p class="pw-msg" id="pwMsg" role="status" aria-live="polite"></p>
+    <div class="pw-actions">
+      <button class="btn btn-quiet" type="button" id="pwCancel">Batal</button>
+      <button class="btn btn-primary" type="submit" id="pwSave">Simpan</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Correcting one shift. Date, shift and machine are the row's identity and
+     are shown, not edited: a row under the wrong machine is deleted and
+     entered again. Every change is kept in edit_log. -->
+<dialog class="pw-dialog edit-dialog" id="editDialog" aria-labelledby="edTitle">
+  <form id="editForm" method="dialog" autocomplete="off">
+    <h2 id="edTitle">Edit data</h2>
+    <p class="card-sub" id="edWho"></p>
+
+    <div class="edit-grid">
+      <label class="field"><span>Order (MO)</span><input id="edMo"></label>
+      <label class="field"><span>Kode kain</span><input id="edKode"></label>
+      <label class="field"><span>Output (m)</span><input id="edProd" type="number" step="any" min="0"></label>
+      <label class="field"><span>RPM</span><input id="edRpm" type="number" step="any" min="0"></label>
+      <label class="field"><span>RPM target</span><input id="edTarget" type="number" step="any" min="0"></label>
+      <label class="field"><span>Jam mulai</span><input id="edJam1" type="time"></label>
+      <label class="field"><span>Jam selesai</span><input id="edJam2" type="time"></label>
+      <label class="field edit-wide"><span>Catatan (KET BB)</span><input id="edKet"></label>
+    </div>
+
+    <p class="edit-warn" id="edWarn"></p>
+    <p class="pw-msg" id="edMsg" role="status" aria-live="polite"></p>
+    <div class="pw-actions">
+      <button class="btn btn-quiet edit-del" type="button" id="edDelete">Hapus baris</button>
+      <span class="edit-spacer"></span>
+      <button class="btn btn-quiet" type="button" id="edCancel">Batal</button>
+      <button class="btn btn-primary" type="submit" id="edSave">Simpan</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- One fabric: its orders' grades, and the looms that wove them. -->
+<dialog class="drawer" id="qDrawer" aria-labelledby="qDrawerTitle">
+  <div class="drawer-head">
+    <div>
+      <h2 id="qDrawerTitle"></h2>
+      <p class="card-sub" id="qDrawerSub"></p>
+    </div>
+    <button class="btn btn-quiet" id="qDrawerClose">Tutup</button>
+  </div>
+  <div class="drawer-body">
+    <h3 class="drawer-h3">Order</h3>
+    <div class="table-wrap">
+      <table class="data" id="qOrderTable">
+        <thead><tr><th>Order</th><th>Digrade</th><th class="num">A</th><th class="num">B</th><th class="num">BS</th><th class="num">RK</th><th class="num">Total</th><th class="num">BS+RK</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <h3 class="drawer-h3">Mesin yang menenun kain ini</h3>
+    <p class="note-line" id="qMachineNote"></p>
+    <div class="table-wrap">
+      <table class="data" id="qMachineTable">
+        <thead><tr><th>Mesin</th><th>Tipe</th><th class="num">Shift</th><th class="num">Output (m)</th><th class="num">Stop lusi</th><th class="num">Stop pakan</th><th class="num">Lusi / 100rb pick</th><th class="num">Pakan / 100rb pick</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</dialog>
+
+<!-- One loom, shift by shift: output against target, and why it stopped. -->
+<dialog class="drawer drawer-wide" id="loomDrawer" aria-labelledby="loomDrawerTitle">
+  <div class="drawer-head">
+    <div>
+      <h2 id="loomDrawerTitle"></h2>
+      <p class="card-sub" id="loomDrawerSub"></p>
+    </div>
+    <button class="btn btn-quiet" id="loomDrawerClose">Tutup</button>
+  </div>
+  <div class="table-wrap">
+    <table class="data" id="loomShiftTable">
+      <thead>
+        <tr><th>Tanggal</th><th>Shift</th><th>Kain</th><th>Beam</th><th>Order</th>
+          <th class="num">RPM</th><th class="num">RPM target</th><th class="num">Pick</th>
+          <th class="num" title="Menit jalan ÷ (jalan + stop)">Efisiensi</th><th class="num">Output (m)</th><th class="num">Target (m)</th><th class="num">Capai</th>
+          <th class="num">Stop lusi</th><th class="num">Stop pakan</th><th class="num">Stop lain</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</dialog>
+
+<dialog class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h2 id="drawerTitle"></h2>
+    <button class="btn btn-quiet" id="drawerClose">Tutup</button>
+  </div>
+  <div class="table-wrap">
+    <table class="data" id="drawerTable">
+      <thead>
+        <tr><th>Tanggal</th><th>Shift</th><th>Jam</th><th>Order</th><th>Kain</th><th class="num">Pick</th><th class="num" title="RPM TARGET (kolom S)">Target RPM</th><th class="num" title="RPM (kolom O)">RPM</th><th class="num" title="RPM TARGET × 8 × 60 × 2,54 ÷ (pick × 100) × jml kain">Output target (m)</th><th class="num">Output (m)</th><th class="num" title="Output ÷ output target">Capai</th><th>Catatan</th><th>Diinput</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
