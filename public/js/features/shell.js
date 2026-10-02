@@ -48,7 +48,9 @@ export function switchTab(name) {
   // The combined report goes month by month and has its own month picker.
   const ownData = ['pabrik', 'users', 'gabungan', 'kosong'].includes(name);
   $('#filterBar').classList.toggle('is-hidden', name === 'import' || ownData);
-  $('#gsearch').hidden = ownData;
+  // Search answers with orders, so it stays on the combined report too: from
+  // there it searches every family and opens the one that wove the order.
+  $('#gsearch').hidden = ownData && name !== 'gabungan';
   $$('.field[data-pick]').forEach((f) => {
     const onlyOrderFilters = name === 'quality';
     f.style.display = onlyOrderFilters && !['fabric', 'mo'].includes(f.dataset.pick) ? 'none' : '';

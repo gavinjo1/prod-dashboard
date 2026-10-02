@@ -400,3 +400,16 @@ WHERE l.batch_id IS NULL AND l.status = 'ok';
 -- a METER of 0 against a real SODOKAN can be seen and put right.
 ALTER TABLE production ADD COLUMN IF NOT EXISTS ketik   numeric;
 ALTER TABLE production ADD COLUMN IF NOT EXISTS sodokan numeric;
+
+-- The shuttle workbook's SODOKAN table: metres of fabric per advance of the
+-- counter (CM), by fabric and loom width. A shift typed in by hand finds its
+-- METER here, as the daily sheets do with SUMIF.
+CREATE TABLE IF NOT EXISTS shuttle_sodokan (
+  kode_kain   text        NOT NULL,
+  width       integer     NOT NULL,   -- loom width: 75 or 56
+  cm          numeric     NOT NULL,   -- SODOKAN, rounded to 2 places
+  meter       numeric     NOT NULL,
+  source_file text,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (kode_kain, width, cm)
+);

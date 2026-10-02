@@ -2,9 +2,10 @@
  * The search box over everything.
  */
 import { $, $$ } from '../core/dom.js';
-import { isCurrent, params, state, takeTicket } from '../core/state.js';
+import { isCurrent, state, takeTicket } from '../core/state.js';
 import { esc, fmt } from '../charts/core.js';
 import { refresh, switchTab } from './shell.js';
+import { FAMILY_LABEL, chooseFamily } from './family.js';
 
 /* ------------------------------------------------------------------ *
  * Search over everything
@@ -45,9 +46,13 @@ export function renderSearch(query, rows) {
       summarise(r.type_mc, '·', 'tipe'),
       r.n_machines ? `${fmt.int(r.n_machines)} mesin` : null
     ].filter(Boolean).join(' · ');
-    return `<button class="gs-row" type="button" data-mo="${esc(r.mo)}">
+    // Semua searches every family, so each order says whose it is.
+    const fams = String(r.families ?? '').split(',').filter(Boolean);
+    const famTags = state.family === 'semua'
+      ? fams.map((f) => `<span class="gs-fam">${esc(FAMILY_LABEL[f] ?? f)}</span>`).join('') : '';
+    return `<button class="gs-row" type="button" data-mo="${esc(r.mo)}" data-family="${esc(fams[0] ?? '')}">
       <span class="gs-main">
-        <span><span class="gs-mo">${esc(r.mo)}</span><span class="gs-cust">${esc(r.customer ?? '—')}</span></span>
+        <span>${famTags}<span class="gs-mo">${esc(r.mo)}</span><span class="gs-cust">${esc(r.customer ?? '—')}</span></span>
         <span class="gs-sub">${esc(bits) || 'tidak ditenun di periode ini'}</span>
       </span>
       <span class="gs-right">
@@ -69,8 +74,9 @@ gsInput.addEventListener('input', () => {
 
   gsTimer = setTimeout(async () => {
     const ticket = takeTicket('search');
-    // Only the family on screen: AJL's orders are not Rapier's.
-    const res = await fetch(`/api/search?${new URLSearchParams({ q: query, family: params().get('family') })}`);
+    // Only the family on screen: AJL's orders are not Rapier's. Semua: all of them.
+    // The family as picked, not params()'s: that one stands in AJL for Semua.
+    const res = await fetch(`/api/search?${new URLSearchParams({ q: query, family: state.family })}`);
     const data = await res.json();
     if (!isCurrent('search', ticket)) return;
     renderSearch(data.query, data.rows);
@@ -81,14 +87,18 @@ gsInput.addEventListener('focus', () => {
   if (gsInput.value.trim().length >= 2 && $('#gsList').children.length) gsPanel.hidden = false;
 });
 
-/** Picking an order narrows the whole dashboard to it. */
+/**
+ * Picking an order narrows the whole dashboard to it. From Semua, which has
+ * no production view, it first opens the family that wove the order.
+ */
 $('#gsList').addEventListener('click', async (e) => {
   const row = e.target.closest('.gs-row');
   if (!row) return;
-  state.mo = [row.dataset.mo];
-  $$('.picker').forEach((p) => p._sync?.());
   closeSearch();
   gsInput.value = '';
+  if (state.family === 'semua' && row.dataset.family) await chooseFamily(row.dataset.family);
+  state.mo = [row.dataset.mo];
+  $$('.picker').forEach((p) => p._sync?.());
   if (state.tab !== 'production') switchTab('production'); else await refresh();
 });
 

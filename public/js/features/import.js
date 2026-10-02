@@ -96,8 +96,8 @@ export async function uploadFile(file) {
   body.append('file', file);
   // The sheet never says which looms it is about, so the family selected on
   // screen is what tags the rows. Uploading a Rapier workbook while AJL is
-  // showing would file it under AJL.
-  body.append('family', state.family === 'semua' ? 'ajl' : state.family);
+  // showing would file it under AJL. Semua takes the combined report only.
+  body.append('family', state.family);
 
   try {
     const res = await fetch('/api/import', { method: 'POST', body });

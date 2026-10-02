@@ -17,6 +17,7 @@ export const KEYS = {
   daily_capacity:  ['family', 'tgl'],
   gabungan_harian: ['tgl'],
   machine_type:    ['type_mc'],
+  shuttle_sodokan: ['kode_kain', 'width', 'cm'],
   loom_shift:      ['tgl', 'slot', 'loom']
 };
 

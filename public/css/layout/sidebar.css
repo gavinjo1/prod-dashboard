@@ -144,6 +144,15 @@ body.nav-collapsed .shell { margin-left: 0; }
    the subtitle would run on underneath the match tag instead of clipping. */
 .gs-main > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gs-mo { font-weight: 600; font-variant-numeric: tabular-nums; }
+.gs-fam {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--line-soft);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+}
 .gs-cust { margin-left: 8px; color: var(--ink-2); }
 .gs-sub {
   margin-top: 2px;

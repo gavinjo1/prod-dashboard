@@ -126,7 +126,9 @@ export async function loadGabungan() {
       notes.push(`${fmt.int(g.no_pick)} m kain inspect tidak masuk Pick kain inspect: ` +
         'ordernya tidak punya PICK, dan kain yang sama tidak tercatat di order lain.');
     }
-    if (!c.families.shuttle) notes.push('Kolom Shuttle kosong sampai laporan harian Shuttle diimport.');
+    notes.push(c.families.shuttle
+      ? 'Kolom Shuttle kosong: belum ada laporan kualitas Shuttle. Hasil mesinnya ada di kartu Shuttle di bawah.'
+      : 'Kolom Shuttle kosong sampai laporan harian Shuttle diimport.');
   }
   if (g.prev_skipped) {
     notes.push(`Blok RATA² BULAN ${BULAN[Number(g.prev_skipped.slice(5)) - 1].toUpperCase()} belum ` +
@@ -202,6 +204,43 @@ export async function loadGabungan() {
   trend('#gabBsChart', 'bs_pct', { unit: '%', zero: true, label: 'bulan ini' });
   trend('#gabPickChart', 'pick_mesin', { label: 'rata-rata' });
   trend('#gabPiChart', 'pick_inspect', { label: 'rata-rata' });
+
+  paintShuttle(g.shuttle, g.month);
+}
+
+/**
+ * Shuttle's own output for the month: METER against PRODUKSI 100% at the
+ * shed's RPM. Beside the report, not in it — see the note it carries.
+ */
+function paintShuttle(s, month) {
+  // Shown even without data, so a month with no shuttle report says so
+  // rather than leaving the shed out without a word.
+  if (!s) {
+    $('#gabShuttleSub').textContent = `Belum ada laporan Shuttle untuk ${monthName(month)}.`;
+    $('#gabShuttleChart').innerHTML = '';
+    $('#gabShuttleNote').textContent = '';
+    return;
+  }
+  const t = s.total;
+  $('#gabShuttleSub').textContent = `${fmt.int(t.meter)} m dari produksi 100% ${fmt.int(t.prod100)} m · ` +
+    `efisiensi ${p2(t.eff)} · ${fmt.int(t.machines)} mesin · ${t.days} hari`;
+  lineChart($('#gabShuttleChart'), s.days, {
+    x: (d) => d.tgl,
+    y: (d) => d.eff,
+    format: f2,
+    unit: '%',
+    height: 200,
+    baseZero: false,
+    reference: t.eff,
+    referenceLabel: t.eff === null ? '' : `bulan ini ${p2(t.eff)}`,
+    tipRows: (d) => [
+      [sheetDay(d.tgl), p2(d.eff)],
+      ['Meter', `${f2(d.meter)} m`],
+      ['Produksi 100%', `${f2(d.prod100)} m`]
+    ]
+  });
+  $('#gabShuttleNote').textContent = 'Tidak masuk total gabungan di atas, sama seperti sheet pabrik.' +
+    (s.no_meter ? ` ${fmt.int(s.no_meter)} shift ada sodokannya tapi METER-nya 0 (tabel SODOKAN belum lengkap).` : '');
 }
 
 $('#gabMonth').addEventListener('change', (e) => { state.gabMonth = e.target.value; loadGabungan(); });

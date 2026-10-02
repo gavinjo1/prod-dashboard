@@ -66,10 +66,14 @@ export function lineChart(host, data, {
         baseZero ? fmt.short(v) : format(v)));
     }
 
+    // The reference line goes under the data; its label goes over it, on a
+    // halo, after the data is drawn — under the line it was crossed out. At
+    // the left end: the right end is where the last point carries its value.
+    let refLabel = null;
     if (reference !== null) {
       const ry = scaleY(reference);
       svg.append(el('line', { x1: m.l, x2: m.l + iw, y1: ry, y2: ry, stroke: 'var(--axis)', 'stroke-width': 1 }));
-      svg.append(el('text', { class: 'axis-label', x: m.l + iw, y: ry - 6, 'text-anchor': 'end' }, referenceLabel));
+      refLabel = el('text', { class: 'axis-label ref-label', x: m.l + 4, y: ry - 6, 'text-anchor': 'start' }, referenceLabel);
     }
 
     const d = pts.map((p, i) => `${i ? 'L' : 'M'}${scaleX(i).toFixed(1)},${scaleY(y(p)).toFixed(1)}`).join(' ');
@@ -78,6 +82,7 @@ export function lineChart(host, data, {
       fill, stroke: 'none'
     }));
     svg.append(el('path', { d, fill: 'none', stroke: colour, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    if (refLabel) svg.append(refLabel);
 
     // x labels thinned to whatever fits
     const keep = labelIndices(pts.length, Math.max(1, Math.ceil(pts.length / Math.floor(iw / 58))));

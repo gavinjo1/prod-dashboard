@@ -40,6 +40,12 @@ export function applyFamily(family) {
   if ($('#entryForm')) {
     ['#entryForm', '#entryAuto', '#entryResult'].forEach((s) => { $(s).hidden = family === 'semua'; });
     $('#entryNoFamily').hidden = family !== 'semua';
+    // Shuttle is counted by KETIK and SODOKAN into METER, with no RPM reading.
+    $$('#entryForm [data-only]').forEach((el) => { el.hidden = el.dataset.only !== family; });
+    $$('#entryForm [data-not]').forEach((el) => { el.hidden = el.dataset.not === family; });
+    $('#eProdLabel').textContent = family === 'shuttle' ? 'Meter' : 'Output (m)';
+    // What was filled in for another family's machine does not carry over.
+    $('#eClear').click();
   }
 
   // Stay on the current tab when it belongs to this family too (Import).
@@ -48,14 +54,17 @@ export function applyFamily(family) {
   switchTab(family === 'semua' ? 'gabungan' : 'production');
 }
 
-$('#family').addEventListener('change', async (e) => {
+/** Switches the whole dashboard to another family, as the picker does. */
+export async function chooseFamily(family) {
   // The machines, fabrics and orders all belong to one family, and the date
   // range differs too — so the filters are rebuilt rather than carried over.
   state.shift = []; state.jam = []; state.group = [];
   state.type = []; state.machine = []; state.fabric = []; state.mo = [];
   state.from = ''; state.to = '';
-  applyFamily(e.target.value);
+  applyFamily(family);
   await loadFilters();
   $$('.picker').forEach((p) => p._sync?.());
   await refresh();
-});
+}
+
+$('#family').addEventListener('change', (e) => chooseFamily(e.target.value));

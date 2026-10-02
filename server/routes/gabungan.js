@@ -7,6 +7,7 @@ import { query } from '../db.js';
 import { send, AppError } from '../errors.js';
 import { gabSheet, BULAN_UP } from '../gabungan-xlsx.js';
 import { requireRole } from '../auth.js';
+import { pricedShifts } from '../lib/formulas.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -165,6 +166,38 @@ async function autoCoverage(m) {
 }
 
 /**
+ * Shuttle on its own: the looms' METER against what they could weave at the
+ * shed's RPM, by the same formula as the Produksi tab. Kept out of the
+ * combined figures, as on the mill's own sheet: the shed has no inspection
+ * report, so its A+B, BS and picks are not known.
+ */
+async function shuttleMonth(m) {
+  const [lo, hi] = monthBounds(m);
+  const { rows } = await query(`
+    WITH ${pricedShifts(`WHERE p.family = 'shuttle' AND p.tgl >= $1 AND p.tgl < $2`)}
+    SELECT tgl::text AS tgl,
+           sum(produksi)                         AS meter,
+           sum(capability) FILTER (WHERE priced) AS prod100,
+           sum(produksi)   FILTER (WHERE priced) AS priced_meter,
+           count(DISTINCT no_mc)::int            AS machines
+    FROM r GROUP BY GROUPING SETS ((tgl), ()) ORDER BY tgl NULLS LAST`, [lo, hi]);
+  const total = rows.pop();
+  if (!rows.length) return null;
+  const eff = (d) => (Number(d.prod100) ? Number(d.priced_meter) / Number(d.prod100) * 100 : null);
+  const { rows: [gap] } = await query(`
+    SELECT count(*)::int AS n FROM production
+    WHERE family = 'shuttle' AND tgl >= $1 AND tgl < $2
+      AND sodokan > 0 AND COALESCE(produksi, 0) = 0`, [lo, hi]);
+  return {
+    days: rows.map((d) => ({ tgl: d.tgl, meter: Number(d.meter), prod100: Number(d.prod100), eff: eff(d) })),
+    total: { meter: Number(total.meter), prod100: Number(total.prod100), eff: eff(total),
+      machines: total.machines, days: rows.length },
+    // Shifts whose METER the workbook could not work out (no SODOKAN line).
+    no_meter: gap.n
+  };
+}
+
+/**
  * The combined report for a month — used by the page and by the Excel export,
  * so the file can never disagree with what is on screen.
  */
@@ -179,8 +212,16 @@ async function gabReport(q) {
 
   const { rows: months } = await query(`SELECT m FROM (${src.months}) x ORDER BY m DESC`);
   const list = months.map((r) => r.m);
+  // Opened on the latest month with inspected cloth. A month that has only
+  // begun — one day of Rapier, no grade yet — is blank in every column but
+  // one, and opening on it hid the month everyone was still reading.
+  let latest = list[0];
+  if (source === 'auto') {
+    const { rows: [g] } = await query(`SELECT to_char(max(tgl), 'YYYY-MM') AS m FROM grade`);
+    if (list.includes(g?.m)) latest = g.m;
+  }
   const month = /^\d{4}-\d{2}$/.test(String(q.month)) && list.includes(q.month)
-    ? q.month : list[0];
+    ? q.month : latest;
   const sources = { auto: has.daily, file: has.file };
   if (!month) return { source, sources, months: [], month: null, rows: [] };
 
@@ -210,7 +251,8 @@ async function gabReport(q) {
     no_pick: source === 'auto' ? rows.reduce((t, r) => t + Number(r.no_pick || 0), 0) : null,
     coverage: source === 'auto' ? await autoCoverage(month) : null,
     prev: prevRows.length ? { month: prevMonth, ...gabPeriod(prevRows) } : null,
-    prev_skipped: prevSkipped
+    prev_skipped: prevSkipped,
+    shuttle: await shuttleMonth(month)
   };
 }
 

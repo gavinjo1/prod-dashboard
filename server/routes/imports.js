@@ -8,7 +8,6 @@ import { importBuffer, previewBuffer, isSupported, FAMILIES } from '../importer/
 import { send, AppError } from '../errors.js';
 import { undoBatch } from '../undo.js';
 import { requireRole } from '../auth.js';
-import { familyOf } from '../lib/filters.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -33,8 +32,14 @@ router.post('/api/import', requireRole('operator'), upload.single('file'), (req,
     return res.status(400).json({ error: `Jenis file tidak didukung: ${req.file.originalname}` });
   }
   const only = req.body.sheets ? String(req.body.sheets).split(',').filter(Boolean) : null;
+  // Said, never assumed: a workbook filed under the wrong family lands on
+  // another family's machines of the same name. Semua takes the combined report.
+  const family = String(req.body.family ?? '').trim().toLowerCase();
+  if (family !== 'semua' && !FAMILIES.includes(family)) {
+    throw new AppError('Pilih jenis mesin (AJL, Rapier atau Shuttle) dulu.');
+  }
   const results = await importBuffer(req.file.buffer, req.file.originalname,
-    { only, editedBy: req.user, family: familyOf(req.body) });
+    { only, editedBy: req.user, family });
   res.json({ file: req.file.originalname, batch_id: results.batch_id, results });
 }));
 

@@ -29,12 +29,18 @@ router.get('/api/search', (req, res) => send(res, async () => {
 
   // Scoped to the family on screen, like every other figure: an order belongs
   // to a family when that family wove it or graded it. The order header table
-  // carries no family, so it only describes orders found that way.
+  // carries no family, so it only describes orders found that way. Semua
+  // searches every family, and each order says whose it is.
+  const fam = String(req.query.family ?? '').trim().toLowerCase() === 'semua' ? null : familyOf(req.query);
   const { rows } = await query(`
-    WITH mos AS (
-      SELECT mo FROM production WHERE family = $3 AND mo IS NOT NULL AND mo <> '0'
+    WITH found AS (
+      SELECT mo, family FROM production
+      WHERE ($3::text IS NULL OR family = $3) AND mo IS NOT NULL AND mo <> '0'
       UNION
-      SELECT mo FROM grade WHERE family = $3
+      SELECT mo, family FROM grade WHERE ($3::text IS NULL OR family = $3)
+    ),
+    mos AS (
+      SELECT mo, string_agg(DISTINCT family, ',') AS families FROM found GROUP BY mo
     ),
     latest AS (
       SELECT DISTINCT ON (mo) mo, customer, kode_kain, total_order, akumulasi, sisa_order, as_of
@@ -51,10 +57,10 @@ router.get('/api/search', (req, res) => send(res, async () => {
              string_agg(DISTINCT COALESCE(t.band || ' | ', '') || COALESCE(t.description, p.type_mc), ' · ') AS types,
              string_agg(DISTINCT p.ket_bb, ', ')                    AS notes
       FROM production p LEFT JOIN machine_type t USING (type_mc)
-      WHERE p.family = $3 AND p.mo IS NOT NULL AND p.mo <> '0'
+      WHERE ($3::text IS NULL OR p.family = $3) AND p.mo IS NOT NULL AND p.mo <> '0'
       GROUP BY p.mo
     )
-    SELECT m.mo,
+    SELECT m.mo, m.families,
            l.customer,
            COALESCE(pr.fabrics, l.kode_kain)                        AS kode_kain,
            pr.types                                                 AS type_mc,
@@ -79,7 +85,7 @@ router.get('/api/search', (req, res) => send(res, async () => {
        OR pr.notes ILIKE $1
        OR ($2::text IS NOT NULL AND pr.machines ~* ('\\m' || $2 || '\\M'))
     ORDER BY pr.produksi DESC NULLS LAST, m.mo
-    LIMIT 60`, [like, machineToken, familyOf(req.query)]);
+    LIMIT 60`, [like, machineToken, fam]);
 
   res.json({ query: q, rows });
 }));

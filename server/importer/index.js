@@ -10,20 +10,25 @@ import { readGabungan, upsertGabungan } from './gabungan.js';
 import { readOrderInfo, readShuttleOrders, upsertOrderInfo, upsertSaldo } from './orders.js';
 import { FIELD_LABEL, diagnose } from './diagnose.js';
 import { readTypeLegend, upsertTypes } from './legend.js';
+import { readSodokanTable, upsertSodokan } from './sodokan.js';
 import { FAMILIES, buildRows, dedupe, shuttleGaps, upsert } from './rows.js';
 export { isSupported } from './workbook.js';
 export { FAMILIES } from './rows.js';
 
 export async function importBuffer(buffer, fileName,
   { only = null, dataset = null, editedBy = null, family = 'ajl' } = {}) {
-  if (!FAMILIES.includes(family)) throw new AppError(`Jenis mesin tidak dikenal: ${family}`);
+  // Semua takes the combined report only. Everything else in a workbook — the
+  // daily sheets, order headers, capacity, the type legend — belongs to one
+  // family, and filed under Semua it would land under none, or the wrong one.
+  const combined = family === 'semua';
+  if (!combined && !FAMILIES.includes(family)) throw new AppError(`Jenis mesin tidak dikenal: ${family}`);
   const wb = readWorkbook(buffer, fileName);
   const results = [];
   const client = await pool.connect();
 
   // One batch per uploaded file, covering every sheet in it: undoing half a
   // workbook would leave the daily sheets disagreeing with BULANAN.
-  const batchId = await openBatch(client, fileName, editedBy, family);
+  const batchId = await openBatch(client, fileName, editedBy, combined ? null : family);
   // The shuttle order list has no date of its own; it is recorded as of the
   // last day of shuttle production in the same file.
   let shuttleLastDay = null;
@@ -42,6 +47,11 @@ export async function importBuffer(buffer, fileName,
       if (!found) continue;
       if (dataset && found.dataset !== dataset) continue;
 
+      if (combined) {
+        results.push({ sheet: name, dataset: found.dataset, status: 'error',
+          message: 'Sheet ini laporan harian. Pilih AJL, Rapier atau Shuttle dulu, lalu upload lagi.' });
+        continue;
+      }
       // A shuttle sheet measures in sodokan and METER; filed under AJL or
       // Rapier its looms would mix with theirs. Refused, not guessed.
       if (found.dataset === 'shuttle' && family !== 'shuttle') {
@@ -107,7 +117,7 @@ export async function importBuffer(buffer, fileName,
       // their formulas show today's totals. Taken at face value they overwrite
       // real history with the latest figures.
       const orders = new Map();
-      for (const name of wb.SheetNames) {
+      for (const name of combined ? [] : wb.SheetNames) {
         if (only && !only.includes(name)) continue;
         const day = /^\s*(\d{1,2})\s*$/.exec(name);
         if (!day || Number(day[1]) < 1 || Number(day[1]) > 31) continue;
@@ -140,8 +150,33 @@ export async function importBuffer(buffer, fileName,
         }
       }
 
+      // The shuttle SODOKAN table, so a shift typed in by hand gets its METER
+      // the way the workbook works it out.
+      if (family === 'shuttle') {
+        for (const name of wb.SheetNames) {
+          if (only && !only.includes(name)) continue;
+          let table;
+          try { table = readSodokanTable(wb.Sheets[name]); } catch { continue; }
+          if (!table.entries.length) continue;
+          const warning = table.doubled.size
+            ? 'Tabel SODOKAN punya baris ganda untuk ' +
+              [...table.doubled].map(([f, n]) => `${f} (${n} ukuran)`).join(', ') +
+              '. Excel menjumlahkan keduanya, jadi METER kain itu dobel.'
+            : null;
+          try {
+            await snapshot(client, batchId, 'shuttle_sodokan', table.entries);
+            const written = await upsertSodokan(client, table.entries, fileName);
+            results.push({ sheet: name, dataset: 'sodokan', status: 'ok',
+              read: table.entries.length, written, skipped: 0, ...(warning ? { warning } : {}) });
+          } catch (err) {
+            results.push({ sheet: name, dataset: 'sodokan', status: 'error', message: err.message });
+          }
+          break;
+        }
+      }
+
       // Daily capacity, from whichever sheet carries the monthly efficiency grid.
-      for (const name of wb.SheetNames) {
+      for (const name of combined ? [] : wb.SheetNames) {
         if (only && !only.includes(name)) continue;
         let cap = [];
         try { cap = readDailyCapacity(wb.Sheets[name]); } catch { continue; }
@@ -185,7 +220,7 @@ export async function importBuffer(buffer, fileName,
       }
 
       const legend = new Map();
-      for (const name of wb.SheetNames) {
+      for (const name of combined ? [] : wb.SheetNames) {
         if (only && !only.includes(name)) continue;
         try {
           for (const e of readTypeLegend(wb.Sheets[name])) legend.set(e.type_mc, e);
@@ -217,6 +252,16 @@ export async function importBuffer(buffer, fileName,
     `DELETE FROM import_batch b WHERE b.id = $1
        AND NOT EXISTS (SELECT 1 FROM import_undo u WHERE u.batch_id = b.id)`, [batchId]);
 
+  if (combined && !results.some((r) => r.dataset === 'gabungan' && r.status === 'ok')) {
+    // Nothing combined in it: say where a daily report goes rather than list
+    // each of its sheets as a failure.
+    if (results.length) {
+      throw new AppError('File ini laporan harian, bukan LAPORAN PRODUKSI GABUNGAN. ' +
+        'Pilih AJL, Rapier atau Shuttle dulu, lalu upload lagi.');
+    }
+    throw new AppError('Tidak ada LAPORAN PRODUKSI GABUNGAN di file ini. Butuh kolom TGL, ' +
+      'ACTUAL HASIL KAIN dan PRODUKSI di bawah judul PICK MESIN/BULAN.');
+  }
   if (!results.length) {
     const near = diagnose(wb, only);
     if (near) {

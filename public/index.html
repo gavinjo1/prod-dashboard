@@ -186,6 +186,16 @@
         <div class="chart" id="gabPiChart"></div>
       </figure>
     </div>
+
+    <!-- Shuttle on its own: the looms' output, outside the combined figures. -->
+    <figure class="card" id="gabShuttle">
+      <figcaption class="card-head">
+        <h2>Shuttle · efisiensi mesin per hari</h2>
+        <p class="card-sub" id="gabShuttleSub"></p>
+      </figcaption>
+      <div class="chart" id="gabShuttleChart"></div>
+      <p class="note-line" id="gabShuttleNote"></p>
+    </figure>
   </div>
 </div>
 
@@ -428,11 +438,15 @@
         <input id="eMc" list="dlMachines" placeholder="A1" required></label>
       <label class="field"><span>Order</span>
         <input id="eMo" list="dlOrders" placeholder="MO/UW/…"></label>
-      <label class="field"><span>Output (m)</span>
+      <label class="field" data-only="shuttle" hidden><span>Ketik</span>
+        <input id="eKetik" type="number" step="0.1" min="0" placeholder="0"></label>
+      <label class="field" data-only="shuttle" hidden><span>Sodokan</span>
+        <input id="eSodokan" type="number" step="0.01" min="0"></label>
+      <label class="field"><span id="eProdLabel">Output (m)</span>
         <input id="eProd" type="number" step="0.01" min="0" placeholder="0"></label>
-      <label class="field"><span>RPM</span>
+      <label class="field" data-not="shuttle"><span>RPM</span>
         <input id="eRpm" type="number" step="1" min="0"></label>
-      <label class="field"><span>RPM target</span>
+      <label class="field" data-not="shuttle"><span>RPM target</span>
         <input id="eTarget" type="number" step="1" min="0"></label>
       <label class="field entry-wide"><span>Catatan (KET BB)</span>
         <input id="eKet" placeholder="TYING, BONGKAR HB, …"></label>
