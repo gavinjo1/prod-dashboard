@@ -20,7 +20,7 @@ export const pricedShifts = (where) => `r AS (
              q.rpm_target * 8 * 60 * 2.54 / (NULLIF(q.pick, 0) * 100) * q.jml_kain AS capability
       FROM (
         SELECT p.tgl, p.family, p.shift, p.no_mc, p.type_mc, p.mo, p.kode_kain,
-               p.produksi, p.rpm_target, p.jml_kain,
+               p.produksi, p.rpm_target, p.jml_kain, p.sodokan,
                (SELECT o.pick FROM order_info o
                  WHERE o.mo = p.mo AND o.pick IS NOT NULL
                  ORDER BY abs(o.as_of - p.tgl), o.as_of DESC LIMIT 1) AS pick

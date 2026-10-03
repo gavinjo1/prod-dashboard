@@ -15,3 +15,8 @@
   .pabrik-bar .field { width: 100%; }
   #loomTable td.loom-style { max-width: 84px; }
 }
+
+/* Efficiency per fabric: the fabric stays in view while the days scroll sideways. */
+.kain-eff th, .kain-eff td { white-space: nowrap; }
+.kain-eff td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.kain-eff th:first-child { left: 0; z-index: 2; }

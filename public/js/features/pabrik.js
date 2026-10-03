@@ -6,7 +6,7 @@ import { achievedCell, stopCell } from '../ui/cells.js';
 import { isCurrent, state, takeTicket, toLogin } from '../core/state.js';
 import { barChart } from '../charts/bars.js';
 import { buildPicker, byMachineNo } from '../ui/picker.js';
-import { esc, fmt } from '../charts/core.js';
+import { LOCALE, esc, fmt } from '../charts/core.js';
 import { lineChart } from '../charts/line.js';
 import { share } from '../core/numbers.js';
 import { tile } from '../ui/tiles.js';
@@ -62,14 +62,14 @@ export async function loadPabrik() {
 
   const empty = !meta.range.rows;
   $('#pabrikEmpty').hidden = !empty;
-  ['#pabrikStats', '#loomTable', '#chartLoomStops', '#chartLoomWaktu', '#chartLoomDaily']
+  ['#pabrikStats', '#loomTable', '#chartLoomStops', '#chartLoomWaktu', '#chartLoomDaily', '#kainEffTable']
     .forEach((sel) => { const el = $(sel).closest('.card, .stats'); if (el) el.hidden = empty; });
   await loadLoomLog();
   if (empty) return;
 
-  const [sum, stops, daily, waktu, mesin] = await Promise.all([
+  const [sum, stops, daily, waktu, mesin, kain] = await Promise.all([
     loomApi('summary'), loomApi('stops'), loomApi('trend', { by: 'day' }), loomApi('by-waktu'),
-    pabrikApi('mesin')
+    pabrikApi('mesin'), pabrikApi('kain')
   ]);
   if (!isCurrent('pabrik', ticket)) return;
 
@@ -142,6 +142,9 @@ export async function loadPabrik() {
       ['Berhenti', fmt.int(d.stop_hour) + ' jam-mesin']
     ]
   });
+
+  kainEff = kain;
+  paintKainEff();
 
   loomRows = mesin.rows;
   $('#loomTableNote').textContent = mesin.unpriced
@@ -299,3 +302,41 @@ $('#loomFile').addEventListener('change', (e) => {
 $('#loomDrop').addEventListener('drop', (e) => {
   if (e.dataTransfer.files[0]) uploadLoom(e.dataTransfer.files[0]);
 });
+
+/* ------------------------------------------------------------------ *
+ * Efficiency per fabric per day
+ *
+ * One row per fabric, one column per day, as the mill's own pivot is laid
+ * out. Each cell is the loom efficiency averaged over the machines that wove
+ * the fabric that day; the latest day is scrolled into view, since that is
+ * the one asked about.
+ * ------------------------------------------------------------------ */
+
+export let kainEff = { dates: [], rows: [] };
+const eff1 = (n) => Number(n).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+export function paintKainEff() {
+  const q = $('#kainSearch').value.trim().toLowerCase();
+  const rows = kainEff.rows.filter((r) => !q || r.kode_kain.toLowerCase().includes(q));
+  const { dates } = kainEff;
+
+  $('#kainEffTable thead').innerHTML = `<tr><th>Kode kain</th>${
+    dates.map((d) => `<th class="num">${esc(fmt.day(d))}</th>`).join('')}</tr>`;
+  $('#kainEffTable tbody').innerHTML = rows.map((r) => `<tr><td>${esc(r.kode_kain)}</td>${dates.map((d) => {
+    const c = r.days[d];
+    if (!c) return '<td class="num muted">—</td>';
+    const note = `${fmt.int(c.machines)} mesin · ${fmt.int(c.shifts)} shift${
+      c.by_style ? ` · ${fmt.int(c.by_style)} shift tanpa laporan harian, kain dari nama style mesin` : ''}`;
+    return `<td class="num" title="${esc(note)}">${eff1(c.effic)}</td>`;
+  }).join('')}</tr>`).join('')
+    || `<tr><td colspan="${dates.length + 1}" class="muted" style="padding:20px;text-align:center">Tidak ada kain yang cocok.</td></tr>`;
+
+  const wrap = $('#kainEffWrap');
+  wrap.scrollLeft = wrap.scrollWidth;
+  $('#kainEffNote').textContent = kainEff.rows.length
+    ? `${fmt.int(kainEff.rows.length)} kode kain · arahkan ke angka untuk jumlah mesin dan shift.`
+    : '';
+}
+
+$('#kainSearch').addEventListener('input', paintKainEff);
+

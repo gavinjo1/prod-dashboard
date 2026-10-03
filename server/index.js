@@ -21,6 +21,7 @@ import { router as gabunganRoutes } from './routes/gabungan.js';
 import { router as entryRoutes } from './routes/entry.js';
 import { router as importsRoutes } from './routes/imports.js';
 import { router as exportRoutes } from './routes/export.js';
+import { router as efisiensiRoutes } from './routes/efisiensi.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -72,6 +73,7 @@ app.use(gabunganRoutes);
 app.use(entryRoutes);
 app.use(importsRoutes);
 app.use(exportRoutes);
+app.use(efisiensiRoutes);
 
 // The factory's own loom monitoring data, on its own router and its own
 // database. Mounted here only so both are served from one port.

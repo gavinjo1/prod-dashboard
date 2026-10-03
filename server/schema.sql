@@ -413,3 +413,63 @@ CREATE TABLE IF NOT EXISTS shuttle_sodokan (
   imported_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (kode_kain, width, cm)
 );
+
+-- How the mill groups fabrics in its efficiency report — "NE LAY OUT": CD30,
+-- CD40, RY 72, RY 84 … — read from the KODE KAIN sheet of its EFFISIENSI
+-- workbook. Not derivable from the yarn: UMR 04 and UMR 07 are both RY30,
+-- yet one is filed under RY 72 and the other under RY 84.
+CREATE TABLE IF NOT EXISTS fabric_group (
+  kode_kain   text PRIMARY KEY,
+  ne          text NOT NULL,
+  source_file text,
+  imported_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- The groups the mill fixes for its AJL fabrics, in the order its "MAS VENAN
+-- 3 HARI SEKALI" sheet lists them (RY 80 last, as there). A fabric's group
+-- follows from its construction and does not change, so these are kept as
+-- fixed: an upload adds fabrics that are missing, and never moves these.
+ALTER TABLE fabric_group ADD COLUMN IF NOT EXISTS fixed     boolean NOT NULL DEFAULT false;
+ALTER TABLE fabric_group ADD COLUMN IF NOT EXISTS sort_ne   integer;
+ALTER TABLE fabric_group ADD COLUMN IF NOT EXISTS sort_kode integer;
+INSERT INTO fabric_group (kode_kain, ne, sort_ne, sort_kode, fixed, source_file) SELECT v.*, true, 'tetap (MAS VENAN)' FROM (VALUES
+  ('UMC 305 AJL', 'CD30', 1, 1),
+  ('C12072 AJL', 'CD40', 2, 2),
+  ('C415 AJL', 'CD40', 2, 3),
+  ('UMC 401 P AJL', 'CD40', 2, 4),
+  ('UMC 405 AJL', 'CD40', 2, 5),
+  ('PE408 AJL', 'PE40', 3, 6),
+  ('UMR 3144 AJL', 'RY 68', 4, 7),
+  ('RY 3100N AJL', 'RY 72', 5, 8),
+  ('UMR 04 AJL', 'RY 72', 5, 9),
+  ('UMR 05 AJL', 'RY 72', 5, 10),
+  ('UMR 06 AJL', 'RY 72', 5, 11),
+  ('UMR 09 AJL', 'RY 72', 5, 12),
+  ('UMR 14 AJL', 'RY 72', 5, 13),
+  ('UMR 19 AJL', 'RY 72', 5, 14),
+  ('RY3100 N AJL', 'RY 72', 5, 15),
+  ('R3120 AJL', 'RY 84', 6, 16),
+  ('R396 AJL', 'RY 84', 6, 17),
+  ('RY 364 AJL', 'RY 84', 6, 18),
+  ('UMR 07 AJL', 'RY 84', 6, 19),
+  ('UMR 08 AJL', 'RY 84', 6, 20),
+  ('UMR 13 AJL', 'RY 84', 6, 21),
+  ('UMR 3151 AJL', 'RY 84', 6, 22),
+  ('UMR 12 AJL', 'RY 84', 6, 23),
+  ('R3111-SB-UR AJL 2', 'RY 84', 6, 24),
+  ('R3111-SB R UR AJL 2', 'RY 84', 6, 25),
+  ('R3111-AJL', 'RY 84', 6, 26),
+  ('RY.364 AJL', 'RY 84', 6, 27),
+  ('R382 AJL', 'RY 84', 6, 28),
+  ('TR35625 T-SB-UR 2', 'TR30', 7, 29),
+  ('TR3746-MAKLOON AJL', 'TR30', 7, 30),
+  ('UMTR01 AJL', 'TR30', 7, 31),
+  ('DTR 3 001', 'TR30', 7, 32),
+  ('TR78 - 2', 'TR45', 8, 33),
+  ('TR7860-2 AJL', 'TR45', 8, 34),
+  ('R3152 AJL', 'RY 80', 9, 35),
+  ('R3138 AJL', 'RY 80', 9, 36)
+) AS v(kode_kain, ne, sort_ne, sort_kode)
+ON CONFLICT (kode_kain) DO UPDATE SET
+  ne = EXCLUDED.ne, sort_ne = EXCLUDED.sort_ne, sort_kode = EXCLUDED.sort_kode,
+  fixed = true, source_file = EXCLUDED.source_file;

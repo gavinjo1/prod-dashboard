@@ -11,6 +11,7 @@ import { loadImportLog } from './import.js';
 import { loadMachines } from './production/machines.js';
 import { loadOrderInfo } from './production/orders.js';
 import { loadPabrik } from './pabrik.js';
+import { loadEfisiensi } from './efisiensi.js';
 import { loadQuality } from './quality.js';
 import { loadSummary } from './production/summary.js';
 import { loadUsers } from './users.js';
@@ -27,6 +28,8 @@ export async function refresh() {
     await loadQuality();
   } else if (state.tab === 'pabrik') {
     await loadPabrik();
+  } else if (state.tab === 'efisiensi') {
+    await loadEfisiensi();
   } else if (state.tab === 'users') {
     if (session.role === 'admin') await loadUsers();
   } else if (state.tab === 'gabungan') {

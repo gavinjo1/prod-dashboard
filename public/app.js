@@ -21,6 +21,7 @@ import './js/features/import.js';
 import './js/features/gabungan.js';
 import './js/features/family.js';
 import './js/features/pabrik.js';
+import './js/features/efisiensi.js';
 import './js/features/search.js';
 import './js/features/filters.js';
 import './js/features/shell.js';

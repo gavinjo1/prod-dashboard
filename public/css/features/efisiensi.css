@@ -1,0 +1,34 @@
+/* ------------------------------------------------------------------ *
+ * Efisiensi kain — block 3 of the mill's sheet, in the combined report's look
+ * ------------------------------------------------------------------ */
+
+.gab-title p.eff-sub { margin: 3px 0 0; color: var(--ink-muted); font-size: 12.5px; font-weight: 400; text-decoration: none; }
+
+/* No padding around the scroll box: the sticky columns pin to its edge, and
+   padding there let the scrolled days show through beside them. */
+#effWrap { margin: 0; padding: 0; }
+
+/* NE and fabric stay in view while the days scroll sideways. The fabric
+   column sits right of the NE column, whose width is measured after drawing
+   (--ne-w, set in efisiensi.js). By class, not position: the header has two
+   rows, and the second row's first cell is a date. */
+.eff-table .eff-ne { position: sticky; left: 0; z-index: 1; }
+.eff-table .eff-kode { position: sticky; left: var(--ne-w, 0); z-index: 1; }
+.eff-table th.eff-ne, .eff-table th.eff-kode { z-index: 2; }
+.eff-table td.eff-ne, .eff-table td.eff-kode { background: var(--surface); }
+.eff-table tr.gab-tot td.eff-ne, .eff-table tr.gab-tot td.eff-kode { background: var(--gab-tot); }
+.eff-table tr.eff-grand td, .eff-table tr.eff-grand td.eff-ne, .eff-table tr.eff-grand td.eff-kode {
+  background: var(--gab-yellow); font-weight: 600;
+}
+.eff-table td.num { min-width: 52px; }
+
+/* A phone has room for one pinned column: the fabric. NE scrolls away with
+   the days, or the two pinned columns would cover every number. */
+/* A total row's name lives in the NE column; on a phone it is repeated in
+   the pinned fabric column, or the row would scroll away unnamed. */
+.eff-phone { display: none; }
+@media (max-width: 640px) {
+  .eff-table .eff-ne { position: static; }
+  .eff-table .eff-kode { left: 0; }
+  .eff-phone { display: inline; }
+}

@@ -79,10 +79,15 @@ export function trendPeriods(days, period) {
   for (const d of days) {
     const k = P.key(d.date);
     let b = out.get(k);
-    if (!b) out.set(k, (b = { date: k, first: d.date, last: d.date, produksi: 0, target: 0, days: 0, short: 0 }));
+    if (!b) {
+      out.set(k, (b = { date: k, first: d.date, last: d.date, produksi: 0, target: 0,
+        at_target_rpm: 0, target_as_is: 0, days: 0, short: 0 }));
+    }
     b.last = d.date;
     b.produksi += Number(d.produksi) || 0;
     b.target += d.target;
+    b.at_target_rpm += Number(d.at_target_rpm) || 0;
+    b.target_as_is += Number(d.target_as_is) || 0;
     b.days++;
     if (Number(d.produksi) < d.target) b.short++;
   }
@@ -116,32 +121,30 @@ export async function paintTrend() {
   const inFilter = (d) => !byDay && lo && d.date >= lo && d.date <= hi;
   const partial = (d) => !byDay && d.days < periodDays(period, d.date);
 
-  const gapRows = (d) => {
+  // Under the two lines: how far off, and the efficiency — output against
+  // capability at the RPM target. Shifts with no pick or RPM target have no
+  // capability, so their output (target_as_is) is left out of both sides.
+  const tipRows = (d) => {
     const gap = Number(d.produksi) - d.target;
+    const cap = Number(d.at_target_rpm) || 0;
     return [
-      ['Selisih', `${gap >= 0 ? '+' : '−'}${fmt.num(Math.abs(gap))} m · ${
-        d.target ? fmt.pct(Number(d.produksi) / d.target * 100) : '—'} dari target`],
-      ['Status', gap >= 0 ? '✓ tercapai' : '▼ di bawah target']
+      ['Selisih', `${gap >= 0 ? '+' : '−'}${fmt.num(Math.abs(gap))} m`],
+      ['Efisiensi', cap ? fmt.pct((Number(d.produksi) - (Number(d.target_as_is) || 0)) / cap * 100) : '—']
     ];
   };
 
-  // Palette slots 1 and 3, which stay apart for colour-blind readers.
+  // Palette slots 1 and 3, which stay apart for colour-blind readers. Target
+  // first, as the tooltip reads: what was asked, then what was woven.
   multiLineChart($('#chartTrend'), rows, [
-    { name: 'Hasil mesin', colour: 'var(--series-1)', value: (d) => Number(d.produksi) },
-    { name: 'Target', colour: 'var(--series-3)', value: (d) => d.target }
+    { name: 'Target', colour: 'var(--series-3)', value: (d) => d.target },
+    { name: 'Hasil mesin', colour: 'var(--series-1)', value: (d) => Number(d.produksi) }
   ], {
     unit: ' m',
     label: (d) => (byDay ? fmt.day(d.date) : P.label(d.date, d)),
     title: (d) => (byDay ? fmt.day(d.date) : P.long(d.date, d)),
     highlight: inFilter,
     hollow: partial,
-    tipExtra: (d) => (byDay
-      ? [...gapRows(d),
-        ['Target efisiensi', `${fmt.num(d.pct)}%`],
-        ['Mesin', fmt.int(d.machines)]]
-      : [...gapRows(d),
-        ['Hari di bawah target', `${fmt.int(d.short)} dari ${fmt.int(d.days)} hari`],
-        ...(partial(d) ? [['Belum penuh', `${fmt.int(d.days)} dari ${fmt.int(periodDays(period, d.date))} hari`]] : [])])
+    tipExtra: tipRows
   });
 
   const short = rows.filter((d) => Number(d.produksi) < d.target).length;

@@ -25,6 +25,7 @@
     <button class="tab" data-tab="gabungan" data-family="semua" role="tab">Laporan Gabungan</button>
     <button class="tab is-active" data-tab="production" data-family="ajl rapier shuttle" role="tab">Produksi</button>
     <button class="tab" data-tab="quality" data-family="ajl rapier shuttle" role="tab">Kualitas</button>
+    <button class="tab" data-tab="efisiensi" data-family="ajl rapier shuttle" role="tab">Efisiensi Kain</button>
     <button class="tab" data-tab="import" data-family="semua ajl rapier shuttle" role="tab">Import</button>
     <button class="tab" data-tab="pabrik" data-family="ajl" role="tab">Pabrik</button>
     <button class="tab" data-tab="users" role="tab" id="tabUsers" hidden>Pengguna</button>
@@ -197,6 +198,37 @@
       <p class="note-line" id="gabShuttleNote"></p>
     </figure>
   </div>
+</div>
+
+<!-- Efisiensi kain: each fabric's efficiency per day, laid out as the mill's
+     "MAS VENAN 3 HARI SEKALI" sheet — grouped by NE LAY OUT, a line per
+     fabric, the group's total under it, RATA-RATA on the right. -->
+<div class="panel" id="panel-efisiensi">
+  <section class="card gab-sheet">
+    <div class="gab-bar">
+      <input type="search" id="effSearch" class="search" placeholder="Cari kode kain…">
+    </div>
+    <header class="gab-title">
+      <h2 id="effTitle">MONITORING CAPAIAN MESIN</h2>
+      <p class="eff-sub" id="effSub"></p>
+    </header>
+    <div class="gab-wrap" id="effWrap">
+      <table class="gab-table eff-table" id="effTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <p class="note-line" id="effNote"></p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Grup NE LAY OUT</h2>
+      <p class="card-sub" id="effMaster"></p>
+    </div>
+    <div class="drop" id="effDrop">
+      <input type="file" id="effFile" accept=".xlsx,.xlsm,.xls,.xlsb" hidden>
+      <p class="drop-main">Tarik file EFFISIENSI ke sini, atau <button class="linkish" id="effBrowse">pilih file</button></p>
+    </div>
+    <div id="effResult"></div>
+  </section>
 </div>
 
 <!-- Shuttle and Rapier: no daily report is loaded for them yet. -->
@@ -596,6 +628,20 @@
       <p class="note-line" id="loomDailyNote"></p>
     </figure>
   </div>
+
+  <section class="card">
+    <div class="card-head card-head-row">
+      <div>
+        <h2>Efisiensi per kode kain</h2>
+        <p class="card-sub">Rata-rata efisiensi mesin yang menenun kain itu, per hari.</p>
+      </div>
+      <input type="search" id="kainSearch" class="search" placeholder="Cari kode kain…">
+    </div>
+    <div class="table-wrap" id="kainEffWrap">
+      <table class="data kain-eff" id="kainEffTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <p class="note-line" id="kainEffNote"></p>
+  </section>
 
   <div class="grid grid-2">
     <figure class="card">

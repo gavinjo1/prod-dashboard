@@ -32,7 +32,7 @@ async function pabrikShifts(q) {
   const { sql, params } = loomWhere(q);
   const { rows: looms } = await loomQuery(`
     SELECT tgl::text AS tgl, slot, crew, waktu, loom, style, beam,
-           rpm, run_min, stop_min, prod_pick, prod_meter,
+           rpm, effic, run_min, stop_min, prod_pick, prod_meter,
            warp_cnt, warp_min, weft_cnt, weft_min,
            -- Everything that is neither warp nor weft. The export's total is
            -- the sum of its causes on all but a handful of rows.
@@ -132,3 +132,59 @@ router.get('/api/pabrik/mesin', (req, res) => send(res, async () => {
 router.get('/api/pabrik/mesin/:loom', (req, res) => send(res, async () => {
   res.json(await pabrikShifts({ ...req.query, loom: req.params.loom }));
 }));
+
+/* ------------------------------------------------------------------ *
+ * Efficiency per fabric per day
+ *
+ * What the mill's "MAS VENAN 3 HARI SEKALI" pivot shows — Average of Effic.
+ * by KODE KAIN × TANGGAL: the loom's own efficiency for every machine-shift
+ * that wove the fabric that day, averaged. Asked as "how did R3120 do
+ * today?".
+ *
+ * The fabric is the daily report's for that loom and shift. A shift the
+ * report lacks is placed by the loom's style name, read as the fabric that
+ * style is most often filed under in the same period, and counted as such.
+ * ------------------------------------------------------------------ */
+
+/** "UMR%2006%20AJL" as the loom system sometimes writes it, made readable. */
+const styleText = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
+
+router.get('/api/pabrik/kain', (req, res) => send(res, async () => {
+  const shifts = (await pabrikShifts(req.query)).filter((s) => s.effic !== null && s.effic !== undefined);
+
+  const seen = new Map();   // style -> fabric -> times filed under it
+  for (const s of shifts) {
+    if (!s.style || !s.kode_kain) continue;
+    const m = seen.get(s.style) ?? new Map();
+    m.set(s.kode_kain, (m.get(s.kode_kain) ?? 0) + 1);
+    seen.set(s.style, m);
+  }
+  const fromStyle = new Map([...seen].map(([style, m]) => [style, [...m].sort((a, b) => b[1] - a[1])[0][0]]));
+
+  const fabrics = new Map();   // fabric -> date -> cell
+  const dates = new Set();
+  for (const s of shifts) {
+    const kode = s.kode_kain ?? fromStyle.get(s.style) ?? (s.style ? styleText(s.style) : null);
+    if (!kode) continue;
+    dates.add(s.tgl);
+    const days = fabrics.get(kode) ?? new Map();
+    const c = days.get(s.tgl) ?? { sum: 0, shifts: 0, looms: new Set(), by_style: 0 };
+    c.sum += Number(s.effic);
+    c.shifts++;
+    c.looms.add(s.loom);
+    if (!s.kode_kain) c.by_style++;
+    days.set(s.tgl, c);
+    fabrics.set(kode, days);
+  }
+
+  res.json({
+    dates: [...dates].sort(),
+    rows: [...fabrics].sort((a, b) => a[0].localeCompare(b[0])).map(([kode_kain, days]) => ({
+      kode_kain,
+      days: Object.fromEntries([...days].map(([tgl, c]) => [tgl, {
+        effic: c.sum / c.shifts, machines: c.looms.size, shifts: c.shifts, by_style: c.by_style
+      }]))
+    }))
+  });
+}));
+
