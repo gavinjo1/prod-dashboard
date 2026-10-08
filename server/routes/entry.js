@@ -7,7 +7,9 @@ import { send, AppError } from '../errors.js';
 import { requireRole } from '../auth.js';
 import { familyOf } from '../lib/filters.js';
 import { FAMILIES } from '../importer/index.js';
-import { SHUTTLE_RPM } from '../importer/rows.js';
+import {
+  SHUTTLE_FIXED, ketikBefore, meterOf, sodokanOf, upsertProduction, widthOf
+} from '../lib/shift-entry.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -16,46 +18,8 @@ export const router = Router({ caseSensitive: true });
  * Manual entry — one shift at a time, without a file
  * ------------------------------------------------------------------ */
 
-/* ---- Shuttle: KETIK -> SODOKAN -> METER, as the workbook works it out ---- */
-
-/** The shift before this one: B follows A, C follows B, A the night before's C. */
-function shiftBefore(tgl, shift) {
-  if (shift === 'B') return [tgl, 'A'];
-  if (shift === 'C') return [tgl, 'B'];
-  const d = new Date(`${tgl}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return [d.toISOString().slice(0, 10), 'C'];
-}
-
-/** The counter reading the shift before ended on; ketik is null when none was kept. */
-async function ketikBefore(no_mc, tgl, shift) {
-  const [t, s] = shiftBefore(tgl, shift);
-  const { rows: [r] } = await query(`
-    SELECT ketik FROM production
-    WHERE family = 'shuttle' AND no_mc = $1 AND tgl = $2 AND shift = $3 AND ketik IS NOT NULL`,
-  [no_mc, t, s]);
-  return { tgl: t, shift: s, ketik: r ? Number(r.ketik) : null };
-}
-
-/**
- * SODOKAN is the counter's advance over the shift. A reading below the one
- * before means the counter was reset, and the reading itself is the advance.
- * Rounded to 2 places, as the daily sheets round it before the lookup.
- */
-const sodokanOf = (ketik, before) =>
-  Math.round((before <= ketik ? ketik - before : ketik) * 100) / 100;
-
-/** Loom width from the type: "SHUTTLE 75" is 75. */
-const widthOf = (type_mc) => Number(/(\d+)\s*$/.exec(type_mc ?? '')?.[1]) || null;
-
-/** METER for a SODOKAN from the workbook's table, or null when it has no line. */
-async function meterOf(kode_kain, width, sodokan) {
-  if (sodokan === 0) return 0;
-  const { rows: [r] } = await query(`
-    SELECT meter FROM shuttle_sodokan
-    WHERE kode_kain = $1 AND width = $2 AND cm = round($3::numeric, 2)`, [kode_kain, width, sodokan]);
-  return r ? Number(r.meter) : null;
-}
+/* Shuttle's KETIK -> SODOKAN -> METER and the row write live in
+   lib/shift-entry.js, shared with the whole-shift table. */
 
 /**
  * Sensible values for the fields the operator should not have to retype.
@@ -182,46 +146,22 @@ router.post('/api/entry', requireRole('operator'), (req, res) => send(res, async
       }
       num.produksi = meter;
     }
-    // As every imported shuttle row: one fabric, the shed's fixed RPM, no RPM reading.
-    Object.assign(num, { jml_kain: 1, rpm: null, rpm_target: SHUTTLE_RPM });
+    Object.assign(num, SHUTTLE_FIXED);
   } else {
     num.ketik = null;
     num.sodokan = null;
   }
 
-  // Derived exactly as the workbook derives them, so a hand-entered row and an
-  // imported one cannot disagree. The shuttle workbook has no metres per
-  // fabric, so neither does its row.
-  const jml = num.jml_kain || null;
-  const hit_rpm = num.rpm != null && jml ? num.rpm * jml : null;
-  const ketik_prod = b.family !== 'shuttle' && num.produksi != null && jml ? num.produksi / jml : null;
-
-  const { rows: [row] } = await query(`
-    INSERT INTO production
-      (tgl, shift, no_mc, mo, kode_kain, type_mc, kelompok_mesin, jml_kain,
-       rpm, rpm_target, hit_rpm, produksi, ketik_rpm, ketik_prod, ket_bb, source_file,
-       jam_mulai, jam_selesai, edited_by, family, ketik, sodokan)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$13,$14,'manual entry',$15,$16,$17,$18,$19,$20)
-    ON CONFLICT (family, tgl, shift, no_mc) DO UPDATE SET
-      mo = EXCLUDED.mo, kode_kain = EXCLUDED.kode_kain, type_mc = EXCLUDED.type_mc,
-      kelompok_mesin = EXCLUDED.kelompok_mesin, jml_kain = EXCLUDED.jml_kain,
-      rpm = EXCLUDED.rpm, rpm_target = EXCLUDED.rpm_target, hit_rpm = EXCLUDED.hit_rpm,
-      produksi = EXCLUDED.produksi, ketik_rpm = EXCLUDED.ketik_rpm,
-      ketik_prod = EXCLUDED.ketik_prod, ket_bb = EXCLUDED.ket_bb,
-      jam_mulai = EXCLUDED.jam_mulai, jam_selesai = EXCLUDED.jam_selesai,
-      edited_by = EXCLUDED.edited_by, ketik = EXCLUDED.ketik, sodokan = EXCLUDED.sodokan,
-      source_file = 'manual entry', imported_at = now()
-    RETURNING (xmax = 0) AS inserted, tgl::text, shift, no_mc, produksi, ketik, sodokan, edited_by,
-              to_char(jam_mulai, 'HH24:MI') AS jam_mulai,
-              to_char(jam_selesai, 'HH24:MI') AS jam_selesai`,
-    [tgl, shift, no_mc, b.mo || null, b.kode_kain || null, b.type_mc || null,
-     b.kelompok_mesin || null, jml, num.rpm, num.rpm_target, hit_rpm, num.produksi,
-     ketik_prod, (b.ket_bb || '').trim() || null, jam_mulai, jam_selesai, req.user,
-     // The family on screen, as for an import: AJL's A1 and Rapier's A1 are
-     // different machines, and the key has to say which one this shift is.
-     b.family, num.ketik, num.sodokan]);
-
-  res.json({ ...row, ketik_prod, hit_rpm });
+  const row = await upsertProduction(pool, {
+    tgl, shift, no_mc, mo: b.mo, kode_kain: b.kode_kain, type_mc: b.type_mc,
+    kelompok_mesin: b.kelompok_mesin, jml_kain: num.jml_kain, rpm: num.rpm,
+    rpm_target: num.rpm_target, produksi: num.produksi, ket_bb: b.ket_bb,
+    jam_mulai, jam_selesai, edited_by: req.user,
+    // The family on screen, as for an import: AJL's A1 and Rapier's A1 are
+    // different machines, and the key has to say which one this shift is.
+    family: b.family, ketik: num.ketik, sodokan: num.sodokan
+  });
+  res.json(row);
 }));
 
 /* ------------------------------------------------------------------ *

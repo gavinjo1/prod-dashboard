@@ -5,7 +5,7 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { loomQuery } from '../loom-db.js';
 import { send, AppError } from '../errors.js';
-import { familyOf, ISO_DAY } from '../lib/filters.js';
+import { familyOf, gradeWhere, ISO_DAY } from '../lib/filters.js';
 import { n0 } from '../lib/formulas.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
@@ -14,22 +14,6 @@ export const router = Router({ caseSensitive: true });
 /* ------------------------------------------------------------------ *
  * Quality
  * ------------------------------------------------------------------ */
-
-/**
- * Grades are reported per MO, so only the date / MO / fabric filters apply —
- * a machine filter would claim BS the grade sheet never tied to a machine.
- */
-function gradeWhere(query, { prefix = '' } = {}) {
-  const clauses = [];
-  const params = [];
-  const add = (sql, v) => { params.push(v); clauses.push(sql.replace('?', `$${params.length}`)); };
-  add(`${prefix}family = ?`, familyOf(query));
-  if (query.from) add(`${prefix}tgl >= ?`, query.from);
-  if (query.to) add(`${prefix}tgl <= ?`, query.to);
-  if (query.mo) add(`${prefix}mo = ANY(?)`, String(query.mo).split(','));
-  if (query.fabric) add(`${prefix}kode_kain = ANY(?)`, String(query.fabric).split(','));
-  return { sql: `WHERE ${clauses.join(' AND ')}`, params };
-}
 
 /**
  * The weaving dates to look at for a fabric's machines: the chosen period, not

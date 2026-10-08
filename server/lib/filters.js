@@ -58,6 +58,22 @@ export const familyOf = (q) => {
   return FAMILIES.includes(f) ? f : 'ajl';
 };
 
+/**
+ * Grades are reported per MO, so only the date / MO / fabric filters apply —
+ * a machine filter would claim BS the grade sheet never tied to a machine.
+ */
+export function gradeWhere(query, { prefix = '' } = {}) {
+  const clauses = [];
+  const params = [];
+  const add = (sql, v) => { params.push(v); clauses.push(sql.replace('?', `$${params.length}`)); };
+  add(`${prefix}family = ?`, familyOf(query));
+  if (query.from) add(`${prefix}tgl >= ?`, query.from);
+  if (query.to) add(`${prefix}tgl <= ?`, query.to);
+  if (query.mo) add(`${prefix}mo = ANY(?)`, String(query.mo).split(','));
+  if (query.fabric) add(`${prefix}kode_kain = ANY(?)`, String(query.fabric).split(','));
+  return { sql: `WHERE ${clauses.join(' AND ')}`, params };
+}
+
 export function buildFilters(q, { prefix = '', startAt = 0, dates = true } = {}) {
   const clauses = [];
   const params = [];

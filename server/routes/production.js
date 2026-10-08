@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import { query } from '../db.js';
 import { send } from '../errors.js';
-import { buildFilters, whereFrom, TYPE_LABEL } from '../lib/filters.js';
+import { buildFilters, gradeWhere, whereFrom, TYPE_LABEL } from '../lib/filters.js';
 import { pricedShifts } from '../lib/formulas.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
@@ -21,16 +21,8 @@ router.get('/api/summary', (req, res) => send(res, async () => {
   const { rows: [s] } = await query(`
     SELECT
       COALESCE(sum(produksi), 0)                       AS produksi,
-      count(*)::int                                    AS entries,
-      count(DISTINCT no_mc)::int                       AS machines,
       count(DISTINCT tgl)::int                         AS days,
-      count(DISTINCT mo)::int                          AS orders,
-      count(*) FILTER (WHERE ket_bb IS NOT NULL)::int  AS stoppages,
-      count(*) FILTER (WHERE COALESCE(produksi,0) = 0)::int AS idle_shifts,
-      -- RPM attainment is output-weighted so big runs count for more.
-      CASE WHEN sum(rpm_target) > 0
-           THEN sum(rpm) / sum(rpm_target) * 100 END   AS rpm_attainment,
-      avg(rpm)                                         AS avg_rpm
+      count(DISTINCT mo)::int                          AS orders
     FROM production ${sql}`, params);
 
   // The same period length immediately before this one, under the same
@@ -47,7 +39,37 @@ router.get('/api/summary', (req, res) => send(res, async () => {
     ${dims.clauses.map((c) => `AND ${c}`).join(' ')}`,
     [...params, ...dims.params]);
 
-  res.json({ ...s, prev });
+  // The last day in the filter — the latest input, or the day the filter
+  // ends on — beside the whole period. Efficiency is the Produksi tab's own:
+  // output over what the looms could have woven, on the shifts that can be
+  // priced.
+  const { clauses, params: pParams } = buildFilters(req.query, { prefix: 'p.' });
+  const { rows: [last] } = await query(`
+    WITH ${pricedShifts(clauses.length ? `WHERE ${clauses.join(' AND ')}` : '')},
+         d AS (SELECT max(tgl) AS tgl FROM r)
+    SELECT d.tgl::text AS tgl,
+           sum(r.produksi) FILTER (WHERE r.tgl = d.tgl) AS produksi,
+           sum(r.produksi) FILTER (WHERE r.priced AND r.tgl = d.tgl) * 100
+             / NULLIF(sum(r.capability) FILTER (WHERE r.priced AND r.tgl = d.tgl), 0) AS eff,
+           sum(r.produksi) FILTER (WHERE r.priced) * 100
+             / NULLIF(sum(r.capability) FILTER (WHERE r.priced), 0) AS eff_period
+    FROM r, d GROUP BY d.tgl`, pParams);
+
+  // Grades are dated by inspection, not weaving, so their last day is their
+  // own. Only the filters the grade sheet can answer apply, as on the Kualitas
+  // tab.
+  const g = gradeWhere(req.query);
+  const { rows: [grade] } = await query(`
+    WITH g AS (SELECT * FROM grade ${g.sql}),
+         d AS (SELECT max(tgl) AS tgl FROM g)
+    SELECT d.tgl::text AS tgl,
+           sum(g.grade_a) FILTER (WHERE g.tgl = d.tgl) AS a,
+           sum(g.bs)      FILTER (WHERE g.tgl = d.tgl) AS bs,
+           sum(g.total)   FILTER (WHERE g.tgl = d.tgl) AS total,
+           sum(g.grade_a) AS a_period, sum(g.bs) AS bs_period, sum(g.total) AS total_period
+    FROM g, d GROUP BY d.tgl`, g.params);
+
+  res.json({ ...s, prev, last: last ?? null, grade: grade ?? null });
 }));
 
 /* ------------------------------------------------------------------ *

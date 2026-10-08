@@ -33,6 +33,9 @@ if (!canWrite) {
   $('#entryForm')?.closest('.card')?.remove();
   $('#drop')?.closest('.card')?.remove();
   $('#loomDrop')?.closest('.card')?.remove();
+  // Typing shifts in is for operators and admins; the API refuses viewers.
+  $('.tab[data-tab="shiftinput"]')?.remove();
+  $('#panel-shiftinput')?.remove();
   // The export carries every customer and order in one file, so it is for
   // the people who work with the data, not everyone who can look at it.
   $('#btnExport')?.remove();

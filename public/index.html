@@ -26,6 +26,7 @@
     <button class="tab is-active" data-tab="production" data-family="ajl rapier shuttle" role="tab">Produksi</button>
     <button class="tab" data-tab="quality" data-family="ajl rapier shuttle" role="tab">Kualitas</button>
     <button class="tab" data-tab="efisiensi" data-family="ajl rapier shuttle" role="tab">Efisiensi Kain</button>
+    <button class="tab" data-tab="shiftinput" data-family="ajl rapier shuttle" role="tab">Input Shift</button>
     <button class="tab" data-tab="import" data-family="semua ajl rapier shuttle" role="tab">Import</button>
     <button class="tab" data-tab="pabrik" data-family="ajl" role="tab">Pabrik</button>
     <button class="tab" data-tab="users" role="tab" id="tabUsers" hidden>Pengguna</button>
@@ -228,6 +229,51 @@
       <p class="drop-main">Tarik file EFFISIENSI ke sini, atau <button class="linkish" id="effBrowse">pilih file</button></p>
     </div>
     <div id="effResult"></div>
+  </section>
+</div>
+
+<!-- Input shift: a whole shift typed in at once, in place of the GARAP sheet.
+     Only what is read off the loom is typed; the rest is filled in. -->
+<div class="panel" id="panel-shiftinput">
+  <section class="card">
+    <div class="si-bar">
+      <label class="field"><span>Tanggal</span><input type="date" id="siTgl"></label>
+      <div class="field"><span>Shift</span>
+        <div class="segmented" role="group" aria-label="Shift" id="siShift">
+          <button class="seg" data-shift="A">A</button>
+          <button class="seg" data-shift="B">B</button>
+          <button class="seg" data-shift="C">C</button>
+        </div>
+      </div>
+      <label class="field"><span>Jam shift</span><select id="siJam"></select></label>
+      <label class="field"><span>Kelompok</span><select id="siGroup"></select></label>
+      <label class="field si-search"><span>Mesin</span>
+        <input type="search" id="siSearch" placeholder="Cari mesin…"></label>
+      <label class="si-toggle" id="siBeamToggle" hidden><input type="checkbox" id="siBeamCols">
+        Kolom beam (No. Beam, TGL KANJI, KP, PANJANG BEAM, TGL NAIK, Lusi, Pakan, KET)</label>
+    </div>
+    <p class="note-line" id="siStatus"></p>
+    <div class="table-wrap si-wrap">
+      <table class="data si-table hide-beam" id="siTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <div class="si-actions">
+      <button class="btn btn-primary" id="siSave" disabled>Simpan shift</button>
+      <button class="btn btn-quiet" id="siUndo" disabled>Batalkan perubahan</button>
+      <span class="si-dirty" id="siDirty"></span>
+    </div>
+    <div id="siResult"></div>
+    <p class="note-line si-legend" id="siLegend">Rapier: PL = putus lusi, PP = putus pakan, CMPX = putus per 100.000 pick.
+      CMPX yang dikosongkan dihitung dari PL/PP, RPM dan EFF. COUNT adalah counter mesin.</p>
+    <datalist id="siMos"></datalist>
+    <datalist id="siKets">
+      <option value="HB"></option><option value="BB"></option><option value="TY"></option>
+      <option value="HB+BB"></option><option value="TY+BB"></option><option value="HB+TY"></option>
+      <option value="NC"></option><option value="NCCK"></option><option value="TE"></option>
+      <option value="TYING"></option><option value="G.SISIR"></option><option value="BONGKAR"></option>
+      <option value="TROUBLE"></option><option value="TUNGGU BEAM"></option>
+    </datalist>
+    <datalist id="siBenang"><option value="ORI"></option><option value="SWP"></option>
+      <option value="RWD"></option><option value="SMR"></option><option value="ORI &amp; SWP"></option></datalist>
   </section>
 </div>
 

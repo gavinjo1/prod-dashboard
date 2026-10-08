@@ -473,3 +473,44 @@ INSERT INTO fabric_group (kode_kain, ne, sort_ne, sort_kode, fixed, source_file)
 ON CONFLICT (kode_kain) DO UPDATE SET
   ne = EXCLUDED.ne, sort_ne = EXCLUDED.sort_ne, sort_kode = EXCLUDED.sort_kode,
   fixed = true, source_file = EXCLUDED.source_file;
+
+-- What a Rapier loom's display shows at the end of a shift besides its
+-- counter and speed, as the EFFISIENSI RAPIER day sheets record it: EFF %,
+-- PL and PP (warp and weft breaks) and a CMPX for each (breaks per 100 000
+-- picks). Typed in with the shift on Input Shift; the counter (COUNT), RPM
+-- and note are the production row's own, so they are not kept twice.
+CREATE TABLE IF NOT EXISTS loom_card (
+  family      text        NOT NULL DEFAULT 'rapier',
+  tgl         date        NOT NULL,
+  shift       text        NOT NULL,
+  no_mc       text        NOT NULL,
+  eff         numeric,
+  pl          numeric,
+  cmpx_pl     numeric,
+  pp          numeric,
+  cmpx_pp     numeric,
+  edited_by   text,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (family, tgl, shift, no_mc)
+);
+
+-- The beams put on each loom: the left-hand columns of the same day sheets
+-- (No. Beam, TGL KANJI, KP, PANJANG BEAM, TGL NAIK, Lusi, Pakan, KET). A beam
+-- stands on its loom from the day it goes up until the next one does.
+CREATE TABLE IF NOT EXISTS loom_beam (
+  id            bigserial   PRIMARY KEY,
+  family        text        NOT NULL DEFAULT 'rapier',
+  no_mc         text        NOT NULL,
+  tgl_naik      date        NOT NULL,
+  no_beam       text,
+  tgl_kanji     date,
+  kp            text,
+  panjang_beam  numeric,
+  kode_kain     text,
+  lusi          text,
+  pakan         text,
+  ket_benang    text,
+  edited_by     text,
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (family, no_mc, tgl_naik)
+);

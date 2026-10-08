@@ -1,0 +1,85 @@
+/* ------------------------------------------------------------------ *
+ * Input Shift — the whole shift as one table to type into
+ * ------------------------------------------------------------------ */
+
+.si-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin-bottom: 10px; }
+.si-bar .field { min-width: 120px; }
+.si-bar .segmented { height: 30px; align-items: center; }
+.si-bar .seg { min-width: 40px; }
+.si-search { flex: 1 1 160px; }
+/* The same boxes as the entry form's, so the bar reads as one row of controls. */
+.si-bar select,
+.si-bar input[type="search"] {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: inherit;
+}
+.si-bar select:focus-visible,
+.si-bar input[type="search"]:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
+
+.si-wrap { max-height: 64vh; margin: 0 -16px; }
+.si-table td { padding: 4px 8px; white-space: nowrap; }
+.si-table th { padding: 6px 8px; }
+
+.si-in {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.si-in:focus { outline: 2px solid var(--series-1); outline-offset: -1px; }
+.si-in::placeholder { color: var(--ink-muted); }
+.si-num { width: 78px; text-align: right; }
+.si-mo { width: 132px; }
+.si-note { width: 110px; }
+.si-kode { max-width: 130px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+
+/* Each row says where it stands; colour is never the only signal. */
+.si-st { font-size: 12px; white-space: normal !important; min-width: 96px; line-height: 1.3; }
+.si-st.is-ok { color: var(--good-text); }
+.si-st.is-dirty { color: var(--series-1); font-weight: 600; }
+.si-st.is-warn { color: #8a5a00; font-weight: 600; }
+.si-st.is-bad { color: var(--critical); font-weight: 600; white-space: normal; min-width: 180px; }
+.si-st.is-empty { color: var(--ink-muted); }
+
+.si-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.si-dirty { color: var(--series-1); font-size: 12.5px; font-weight: 600; }
+
+/* A phone shows what is typed: type and fabric step aside, and the machine
+   number stays pinned while the row scrolls sideways. */
+@media (max-width: 640px) {
+  .si-bar .field { min-width: 0; flex: 1 1 45%; }
+  .si-table th:nth-child(2), .si-table td:nth-child(2),
+  .si-table th:nth-child(4), .si-table td:nth-child(4) { display: none; }
+  .si-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  .si-table th:first-child { left: 0; z-index: 2; }
+  .si-mo { width: 116px; font-size: 12px; padding: 0 6px; }
+  .si-num { width: 64px; }
+}
+
+/* Rapier: the EFFISIENSI RAPIER columns, narrower boxes since there are seven. */
+.si-sm { width: 58px; }
+.si-toggle { display: flex; align-items: center; gap: 6px; height: 30px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.si-legend { margin-top: 8px; font-size: 12px; }
+
+/* The beam on each loom, folded away until asked for. */
+.si-table.hide-beam .si-beamcol { display: none; }
+.si-table .si-beamcol { padding: 4px 3px; }
+.si-w-beam { width: 64px; }
+.si-w-date { width: 70px; }
+.si-w-kp { width: 92px; }
+.si-w-len { width: 56px; text-align: right; }
+.si-w-lusi { width: 100px; }
+.si-w-pakan { width: 140px; }
+.si-w-ket { width: 56px; text-transform: uppercase; }
+
+@media (max-width: 640px) {
+  .si-table .si-beamcol { display: none; }
+  .si-sm { width: 52px; }
+}
