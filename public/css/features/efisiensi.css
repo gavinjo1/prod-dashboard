@@ -32,3 +32,14 @@
   .eff-table .eff-kode { left: 0; }
   .eff-phone { display: inline; }
 }
+
+/* Rapier per deret: two small blocks, as the DERET sheet. */
+.deret-h { margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.deret-table td.num { min-width: 64px; }
+.deret-dayhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 6px; }
+.deret-dayhead .deret-h { margin: 0; }
+.deret-dayhead input[type="date"] {
+  height: 30px; padding: 0 8px; border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--surface); font: inherit;
+}
+.deret-dayhead .note-line { margin: 0; }

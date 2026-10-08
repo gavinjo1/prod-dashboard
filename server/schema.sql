@@ -514,3 +514,59 @@ CREATE TABLE IF NOT EXISTS loom_beam (
   updated_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (family, no_mc, tgl_naik)
 );
+
+-- A loom's type as the mill counts it, where the daily report writes another:
+-- Rapier M1 and M2 are typed AJL in the workbook but are reported as ITEMA.
+CREATE TABLE IF NOT EXISTS machine_type_override (
+  family   text NOT NULL,
+  no_mc    text NOT NULL,
+  type_mc  text NOT NULL,
+  PRIMARY KEY (family, no_mc)
+);
+INSERT INTO machine_type_override (family, no_mc, type_mc) VALUES
+  ('rapier', 'M1', 'ITEMA'),
+  ('rapier', 'M2', 'ITEMA')
+ON CONFLICT (family, no_mc) DO UPDATE SET type_mc = EXCLUDED.type_mc;
+
+-- Rapier's machine groups, "PER DERET" in the EFFISIENSI RAPIER workbook:
+-- the rows of the shed in pairs, A and B are AB, C and D are CD, and so on
+-- (A1, B1 … → AB; M1, N1 … → MN). Read from the machine number, so a loom
+-- needs no table entry to land in its row pair.
+CREATE OR REPLACE FUNCTION rapier_deret(no_mc text) RETURNS text AS $$
+  SELECT CASE WHEN upper(left(no_mc, 1)) ~ '^[A-Z]$' THEN
+    chr(65 + 2 * ((ascii(upper(left(no_mc, 1))) - 65) / 2)) ||
+    chr(66 + 2 * ((ascii(upper(left(no_mc, 1))) - 65) / 2))
+  END
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Both rules are applied to every production row however it arrives (import,
+-- Input Shift, the entry form, an edit), so a re-upload cannot undo them.
+DROP TRIGGER IF EXISTS production_type_override ON production;
+DROP FUNCTION IF EXISTS production_type_override();
+CREATE OR REPLACE FUNCTION production_machine_rules() RETURNS trigger AS $$
+DECLARE
+  t text;
+BEGIN
+  SELECT o.type_mc INTO t FROM machine_type_override o
+  WHERE o.family = NEW.family AND o.no_mc = NEW.no_mc;
+  IF FOUND THEN
+    NEW.type_mc := t;
+  END IF;
+  IF NEW.family = 'rapier' THEN
+    NEW.kelompok_mesin := rapier_deret(NEW.no_mc);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS production_machine_rules ON production;
+CREATE TRIGGER production_machine_rules
+  BEFORE INSERT OR UPDATE OF type_mc, kelompok_mesin, no_mc, family ON production
+  FOR EACH ROW EXECUTE FUNCTION production_machine_rules();
+
+-- Rows stored before the rules existed.
+UPDATE production p SET type_mc = o.type_mc
+FROM machine_type_override o
+WHERE p.family = o.family AND p.no_mc = o.no_mc AND p.type_mc IS DISTINCT FROM o.type_mc;
+UPDATE production SET kelompok_mesin = rapier_deret(no_mc)
+WHERE family = 'rapier' AND kelompok_mesin IS DISTINCT FROM rapier_deret(no_mc);

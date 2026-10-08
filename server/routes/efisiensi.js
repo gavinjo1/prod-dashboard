@@ -147,3 +147,70 @@ router.post('/api/efisiensi-kain/kelompok', requireRole('admin'), upload.single(
     client.release();
   }
 }));
+
+/* ------------------------------------------------------------------ *
+ * Rapier per deret
+ *
+ * The EFFISIENSI RAPIER workbook's DERET sheet: for each row pair of the
+ * shed (AB, CD … MN) and each shift, the average EFF, warp CMPX and weft
+ * CMPX of its looms — a plain average over loom-shifts, those with nothing
+ * read left out, and the Total row over every loom rather than over the
+ * pairs, as its pivot tables do. Two blocks, as there: one day — the last
+ * read unless another is asked for (?tgl) — and the whole period. Only what
+ * was typed on Input Shift counts.
+ * ------------------------------------------------------------------ */
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+async function deretBlock(where, params) {
+  const { rows } = await query(`
+    SELECT rapier_deret(no_mc) AS deret, shift,
+           avg(eff) AS eff, avg(cmpx_pl) AS cl, avg(cmpx_pp) AS cp,
+           count(eff)::int AS n, count(DISTINCT no_mc)::int AS mesin
+    FROM loom_card ${where}
+    GROUP BY GROUPING SETS ((rapier_deret(no_mc), shift), (shift))`, params);
+  const by = new Map();
+  for (const r of rows) {
+    const key = r.deret ?? 'Total';
+    const line = by.get(key) ?? { deret: key, shifts: {} };
+    line.shifts[r.shift] = { eff: r.eff === null ? null : Number(r.eff), cl: r.cl === null ? null : Number(r.cl),
+      cp: r.cp === null ? null : Number(r.cp), n: r.n, mesin: r.mesin };
+    by.set(key, line);
+  }
+  const total = by.get('Total') ?? null;
+  by.delete('Total');
+  return { rows: [...by.values()].sort((a, b) => a.deret.localeCompare(b.deret)), total };
+}
+
+router.get('/api/efisiensi-kain/deret', requireRole('admin'), (req, res) => send(res, async () => {
+  const from = ISO_DAY.test(String(req.query.from)) ? req.query.from : null;
+  const to = ISO_DAY.test(String(req.query.to)) ? req.query.to : null;
+  const range = [];
+  const params = ['rapier'];
+  if (from) { params.push(from); range.push(`tgl >= $${params.length}`); }
+  if (to) { params.push(to); range.push(`tgl <= $${params.length}`); }
+  const inRange = ['family = $1', ...range].join(' AND ');
+  const [{ rows: [b] }, { rows: [all] }] = await Promise.all([
+    query(`SELECT max(tgl)::text AS last, min(tgl)::text AS first FROM loom_card WHERE ${inRange}`, params),
+    // Every day read, for the day picker's bounds.
+    query(`SELECT max(tgl)::text AS last, min(tgl)::text AS first FROM loom_card WHERE family = $1`, ['rapier'])
+  ]);
+  if (!b.last && !all.last) return res.json({ last: null });
+  const tgl = ISO_DAY.test(String(req.query.tgl)) ? req.query.tgl : (b.last ?? all.last);
+  if (!b.last) {
+    const day = await deretBlock(`WHERE family = $1 AND tgl = $2`, ['rapier', tgl]);
+    return res.json({ last: null, tgl, first_all: all.first, last_all: all.last, day, period: null });
+  }
+  // The period: the filter's, or the month of the last day read when none is
+  // set — named by the days actually read in it.
+  const period = from || to
+    ? { where: `WHERE ${inRange}`, params, from: b.first, to: b.last }
+    : { where: `WHERE family = $1 AND date_trunc('month', tgl) = date_trunc('month', $2::date)`,
+      params: ['rapier', b.last], from: `${b.last.slice(0, 7)}-01`, to: b.last };
+  const [day, whole] = await Promise.all([
+    deretBlock(`WHERE family = $1 AND tgl = $2`, ['rapier', tgl]),
+    deretBlock(period.where, period.params)
+  ]);
+  res.json({ last: b.last, tgl, first_all: all.first, last_all: all.last,
+    from: period.from, to: period.to, day, period: whole });
+}));

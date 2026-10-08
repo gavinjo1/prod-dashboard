@@ -89,7 +89,67 @@ export function paintEfisiensi() {
   wrap.scrollLeft = wrap.scrollWidth;
 }
 
+/* ------------------------------------------------------------------ *
+ * Rapier per deret — the workbook's DERET sheet
+ *
+ *   PER DERET | EFF(A) % | CMPX L (A) | CMPX P (A) | EFF(B) % | … | CMPX P (C)
+ *   AB … MN, Total
+ *
+ * Once for a day and once for the period, as the sheet has a Tanggal block
+ * and a BULAN block. The day is the last one read until another is picked.
+ * A cell's title says how many looms.
+ * ------------------------------------------------------------------ */
+
+const SHIFTS = ['A', 'B', 'C'];
+let deretDay = '';   // the day picked for the Tanggal block; empty for the last read
+
+function paintDeret(table, block) {
+  $(`#${table} thead`).innerHTML = `<tr><th>PER DERET</th>${SHIFTS.map((s) =>
+    `<th>EFF(${s}) %</th><th>CMPX L (${s})</th><th>CMPX P (${s})</th>`).join('')}</tr>`;
+  const cells = (line) => SHIFTS.map((s) => {
+    const x = line.shifts[s];
+    const t = x ? ` title="${esc(`${fmt.int(x.mesin)} mesin · ${fmt.int(x.n)} shift`)}"` : '';
+    return `<td class="num"${t}>${x ? f2(x.eff) : ''}</td><td class="num"${t}>${x ? f2(x.cl) : ''}</td><td class="num"${t}>${x ? f2(x.cp) : ''}</td>`;
+  }).join('');
+  $(`#${table} tbody`).innerHTML = block.rows.map((line) => `<tr><td class="b">${esc(line.deret)}</td>${cells(line)}</tr>`).join('')
+    + (block.total ? `<tr class="gab-tot"><td class="b">Total</td>${cells(block.total)}</tr>` : '')
+    || '<tr><td colspan="10" class="muted" style="padding:14px;text-align:center">Tidak ada isian EFF dan CMPX di Input Shift untuk tanggal ini.</td></tr>';
+}
+
+async function loadDeret() {
+  const card = $('#deretCard');
+  card.hidden = state.family !== 'rapier';
+  if (card.hidden) return;
+  const ticket = takeTicket('deret');
+  const d = await api('efisiensi-kain/deret', deretDay ? { tgl: deretDay } : {});
+  if (!isCurrent('deret', ticket)) return;
+  const any = !!d.last_all;
+  $('#deretBody').hidden = !any;
+  $('#deretEmpty').hidden = any;
+  $('#deretSub').textContent = 'Rata-rata per mesin-shift dari EFF, CMPX lusi dan CMPX pakan yang diisi di Input Shift.';
+  if (!any) return;
+  const pick = $('#deretTgl');
+  pick.value = d.tgl;
+  pick.min = d.first_all;
+  pick.max = d.last_all;
+  $('#deretDayNote').textContent = `${fmt.day(d.tgl)} ${d.tgl.slice(0, 4)}${d.tgl === d.last_all ? ' · hari terakhir yang diisi' : ''}`;
+  paintDeret('deretDay', d.day);
+  // The period block follows the date filter; with nothing read in it, it stays away.
+  $('#deretPeriodBox').hidden = !d.period;
+  if (d.period) {
+    $('#deretPeriodTitle').textContent = `Periode ${periodName(d.from, d.to)}`;
+    paintDeret('deretPeriod', d.period);
+  }
+}
+
+$('#deretTgl').addEventListener('change', (e) => {
+  deretDay = e.target.value;
+  loadDeret();
+});
+
 export async function loadEfisiensi() {
+  // Alongside the fabric sheet, so neither waits for the other.
+  const deret = loadDeret();
   const ticket = takeTicket('efisiensi');
   const g = await api('efisiensi-kain');
   if (!isCurrent('efisiensi', ticket)) return;
@@ -118,6 +178,7 @@ export async function loadEfisiensi() {
   $('#effDrop').hidden = !session.canWrite;
 
   paintEfisiensi();
+  await deret;
 }
 
 $('#effSearch').addEventListener('input', paintEfisiensi);

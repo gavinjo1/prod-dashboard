@@ -219,6 +219,28 @@
     <p class="note-line" id="effNote"></p>
   </section>
 
+  <!-- Rapier only: the EFFISIENSI RAPIER workbook's DERET sheet, from what
+       is typed on Input Shift. -->
+  <section class="card gab-sheet" id="deretCard" hidden>
+    <header class="gab-title">
+      <h2>EFF PER DERET DIV RAPIER</h2>
+      <p class="eff-sub" id="deretSub"></p>
+    </header>
+    <div id="deretBody">
+      <div class="deret-dayhead">
+        <h3 class="deret-h">Tanggal</h3>
+        <input type="date" id="deretTgl" aria-label="Tanggal blok harian">
+        <span class="note-line" id="deretDayNote"></span>
+      </div>
+      <div class="gab-wrap"><table class="gab-table deret-table" id="deretDay"><thead></thead><tbody></tbody></table></div>
+      <div id="deretPeriodBox">
+        <h3 class="deret-h" id="deretPeriodTitle"></h3>
+        <div class="gab-wrap"><table class="gab-table deret-table" id="deretPeriod"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+    <p class="note-line" id="deretEmpty" hidden>Belum ada EFF dan CMPX dari Input Shift Rapier untuk periode ini.</p>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <h2>Grup NE LAY OUT</h2>
