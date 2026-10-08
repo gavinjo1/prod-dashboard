@@ -156,7 +156,7 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
   const hour = (v) => {
     const t = String(v ?? '').trim();
     if (!t) return null;
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new AppError('Jam shift harus format 24 jam, contoh 07:00.');
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new AppError('Jam shift harus format 24 jam, contoh 06:00.');
     return t;
   };
   const jam_mulai = hour(b.jam_mulai);
@@ -273,6 +273,42 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
     for (const beam of beams) await writeBeam(client, family, beam, req.user);
     await client.query('COMMIT');
     res.json({ saved: ready.length, inserted, updated: ready.length - inserted, beams: beams.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}));
+
+/* ---- taking a machine off a shift ---- */
+
+/**
+ * Deletes one machine's row for the shift, whether typed here or imported,
+ * and Rapier's readings with it. The whole row goes to edit_log first, so a
+ * deletion can be put back from there.
+ */
+router.delete('/api/input-shift', requireRole('operator'), (req, res) => send(res, async () => {
+  const { family, tgl, shift } = readShift(req.query);
+  const no_mc = String(req.query.no_mc ?? '').trim();
+  if (!no_mc) throw new AppError('Mesin belum dipilih.');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [before] } = await client.query(
+      `SELECT * FROM production WHERE family = $1 AND tgl = $2 AND shift = $3 AND no_mc = $4`,
+      [family, tgl, shift, no_mc]);
+    if (!before) throw new AppError(`${no_mc} shift ${shift} tidak ada — mungkin sudah dihapus.`, 404);
+    const { rows: [card] } = await client.query(
+      `DELETE FROM loom_card WHERE family = $1 AND tgl = $2 AND shift = $3 AND no_mc = $4 RETURNING *`,
+      [family, tgl, shift, no_mc]);
+    await client.query('DELETE FROM production WHERE id = $1', [before.id]);
+    await client.query(
+      `INSERT INTO edit_log (table_name, row_id, action, before_json, edited_by)
+       VALUES ('production', $1, 'delete', $2, $3)`,
+      [before.id, JSON.stringify(card ? { ...before, loom_card: card } : before), req.user]);
+    await client.query('COMMIT');
+    res.json({ ok: true, no_mc });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;

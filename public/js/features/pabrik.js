@@ -200,7 +200,7 @@ export function paintLooms() {
   }).join('') || `<tr><td colspan="12" class="muted" style="padding:20px;text-align:center">Tidak ada mesin yang cocok.</td></tr>`;
 }
 
-export const WAKTU_LABEL = { pagi: 'Pagi 07–15', siang: 'Siang 15–23', malam: 'Malam 23–07' };
+export const WAKTU_LABEL = { pagi: 'Pagi 06–14', siang: 'Siang 14–22', malam: 'Malam 22–06' };
 
 export async function openLoom(loom) {
   const rows = await pabrikApi(`mesin/${encodeURIComponent(loom)}`);

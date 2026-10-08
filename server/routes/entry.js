@@ -111,7 +111,7 @@ router.post('/api/entry', requireRole('operator'), (req, res) => send(res, async
   const jam_mulai = hour(b.jam_mulai);
   const jam_selesai = hour(b.jam_selesai);
   if (jam_mulai === false || jam_selesai === false) {
-    return res.status(400).json({ error: 'Jam shift harus format 24 jam, contoh 07:00.' });
+    return res.status(400).json({ error: 'Jam shift harus format 24 jam, contoh 06:00.' });
   }
 
   const num = {};
@@ -195,7 +195,7 @@ router.patch('/api/production/:id', requireRole('operator'), (req, res) => send(
   const hour = (v) => {
     const t = String(v ?? '').trim();
     if (!t) return null;
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new AppError('Jam harus format 24 jam, contoh 07:00.');
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new AppError('Jam harus format 24 jam, contoh 06:00.');
     return t;
   };
   const text = (v) => String(v ?? '').trim() || null;

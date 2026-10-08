@@ -83,3 +83,11 @@
   .si-table .si-beamcol { display: none; }
   .si-sm { width: 52px; }
 }
+
+/* A saved row, locked until "Ubah": the figures read as text, not boxes. */
+.si-in:disabled { border-color: transparent; background: transparent; color: var(--ink); opacity: 1; }
+.si-act { white-space: nowrap; text-align: right; }
+.si-act .btn { height: 26px; padding: 0 9px; font-size: 12px; }
+.si-act .si-del { color: var(--critical); }
+/* The date hint is for typing; a locked row has nothing to type. */
+.si-in:disabled[placeholder="dd/mm/yy"]::placeholder { color: transparent; }

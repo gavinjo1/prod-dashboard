@@ -27,28 +27,28 @@ export const LIST_FILTERS = {
 /* ------------------------------------------------------------------ *
  * Shift windows
  *
- * The mill runs three: 07:00–15:00, 15:00–23:00, 23:00–07:00. The crew letter
+ * The mill runs three: 06:00–14:00, 14:00–22:00, 22:00–06:00. The crew letter
  * on a row is not the window — A/B/C rotate every Friday — so filtering by
  * clock time has to go through the hours actually recorded on the row.
  * ------------------------------------------------------------------ */
 
 export const SHIFT_WINDOWS = [
-  { value: 'pagi',  label: '07:00–15:00', start: '07:00', end: '15:00' },
-  { value: 'siang', label: '15:00–23:00', start: '15:00', end: '23:00' },
-  { value: 'malam', label: '23:00–07:00', start: '23:00', end: '07:00' }
+  { value: 'pagi',  label: '06:00–14:00', start: '06:00', end: '14:00' },
+  { value: 'siang', label: '14:00–22:00', start: '14:00', end: '22:00' },
+  { value: 'malam', label: '22:00–06:00', start: '22:00', end: '06:00' }
 ];
 
 /**
- * Which window a row belongs to, by whichever of 07:00 / 15:00 / 23:00 its
+ * Which window a row belongs to, by whichever of 06:00 / 14:00 / 22:00 its
  * start time is nearest. The boundaries are the midpoints between them, so a
- * week that starts the morning shift at 06:30 or 07:30 still reads as pagi —
+ * week that starts the morning shift at 05:30 or 06:30 still reads as pagi —
  * which matters, because these hours are re-set most weeks.
  *
  * A row with no hours belongs to no window and is simply never matched.
  */
 export const shiftWindowSql = (prefix) => `CASE
-    WHEN ${prefix}jam_mulai >= TIME '03:00' AND ${prefix}jam_mulai < TIME '11:00' THEN 'pagi'
-    WHEN ${prefix}jam_mulai >= TIME '11:00' AND ${prefix}jam_mulai < TIME '19:00' THEN 'siang'
+    WHEN ${prefix}jam_mulai >= TIME '02:00' AND ${prefix}jam_mulai < TIME '10:00' THEN 'pagi'
+    WHEN ${prefix}jam_mulai >= TIME '10:00' AND ${prefix}jam_mulai < TIME '18:00' THEN 'siang'
     WHEN ${prefix}jam_mulai IS NOT NULL THEN 'malam'
   END`;
 

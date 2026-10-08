@@ -27,6 +27,8 @@ import { windows } from './filters.js';
  *
  * Nothing is written until "Simpan shift", and then only the rows changed,
  * all at once: if one cannot be saved, none is, and each problem is named.
+ * A saved row stays on screen, locked: "Ubah" opens it again, and from there
+ * "Hapus" takes the machine off the shift.
  * ------------------------------------------------------------------ */
 
 const si = {
@@ -34,6 +36,7 @@ const si = {
   data: null,
   edits: new Map(),      // no_mc -> { field: typed value }
   errors: new Map(),     // no_mc -> message from the last save
+  editing: new Set(),    // saved rows opened again with "Ubah"
   group: '',
   search: ''
 };
@@ -164,8 +167,19 @@ function statusOf(m, d) {
     text: [tag, ...d.warn].filter(Boolean).join(' · ') };
 }
 
+/** A saved row is shown locked until "Ubah" opens it; one with typing in it never is. */
+const locked = (m) => !!m.saved && !si.editing.has(m.no_mc) && !si.edits.has(m.no_mc);
+
 const input = (m, field, cls = '', extra = '') =>
-  `<input class="si-in ${cls}" data-mc="${esc(m.no_mc)}" data-f="${field}" value="${esc(valueOf(m, field))}" ${extra}>`;
+  `<input class="si-in ${cls}" data-mc="${esc(m.no_mc)}" data-f="${field}" value="${esc(valueOf(m, field))}" ${extra}${
+    locked(m) ? ' disabled' : ''}>`;
+
+function actionsOf(m) {
+  if (!m.saved) return '<td class="si-act"></td>';
+  if (locked(m)) return '<td class="si-act"><button class="btn btn-quiet" data-act="edit">Ubah</button></td>';
+  return `<td class="si-act"><button class="btn btn-quiet si-del" data-act="delete">Hapus</button>
+    <button class="btn btn-quiet" data-act="cancel">Batal</button></td>`;
+}
 
 function cellsOf(m) {
   const fam = si.data.family;
@@ -180,7 +194,7 @@ function cellsOf(m) {
   const tail = `
     <td class="num si-pct">${d.pct === null ? '' : fmt.pct(d.pct)}</td>
     <td>${input(m, 'ket_bb', 'si-note', 'placeholder="TYING, OH…"')}</td>
-    <td class="si-st ${st.cls}">${esc(st.text)}</td>`;
+    <td class="si-st ${st.cls}">${esc(st.text)}</td>${actionsOf(m)}`;
   if (fam === 'shuttle') {
     return `${common}
       <td class="num muted">${prevKetik === null ? '—' : fmt.num(prevKetik)}</td>
@@ -202,7 +216,7 @@ function cellsOf(m) {
       <td class="num si-out">${one(d.output)}</td>
       <td class="num si-pct">${d.pct === null ? '' : fmt.pct(d.pct)}</td>
       <td>${input(m, 'ket_bb', 'si-note', 'list="siKets" placeholder="HB, BB, TY…"')}</td>
-      <td class="si-st ${st.cls}">${esc(st.text)}</td>`;
+      <td class="si-st ${st.cls}">${esc(st.text)}</td>${actionsOf(m)}`;
   }
   // The counter first: it is typed for every loom, the RPM only when read.
   return `${common}
@@ -236,12 +250,12 @@ function paintTable() {
     <th>Mesin</th><th>Tipe</th><th>MO</th><th>Kain</th>
     ${BEAM.map(([, label]) => `<th class="si-beamcol">${label}</th>`).join('')}
     <th>RPM</th><th>EFF</th><th>PL</th><th>CMPX</th><th>PP</th><th>CMPX</th><th>COUNT</th>
-    <th class="num">Output (m)</th><th class="num">Kapasitas</th><th>KET</th><th>Status</th></tr>` : `<tr>
+    <th class="num">Output (m)</th><th class="num">Kapasitas</th><th>KET</th><th>Status</th><th></th></tr>` : `<tr>
     <th>Mesin</th><th>${fam === 'shuttle' ? 'Line' : 'Tipe'}</th><th>MO</th><th>Kain</th>
     ${fam === 'shuttle'
     ? '<th class="num">Ketik sebelum</th><th>Ketik</th><th>Sodokan</th><th>Meter</th>'
-    : `<th>${fam === 'rapier' ? 'Ketik counter' : 'Ketik prod'}</th><th>RPM</th><th class="num">Output (m)</th>`}
-    <th class="num">Kapasitas</th><th>Catatan</th><th>Status</th></tr>`;
+    : '<th>Ketik prod</th><th>RPM</th><th class="num">Output (m)</th>'}
+    <th class="num">Kapasitas</th><th>Catatan</th><th>Status</th><th></th></tr>`;
   const rows = visible();
   $('#siTable tbody').innerHTML = rows.map((m) => `<tr data-mc="${esc(m.no_mc)}">${cellsOf(m)}</tr>`).join('')
     || `<tr><td colspan="30" class="muted" style="padding:20px;text-align:center">Tidak ada mesin yang cocok.</td></tr>`;
@@ -289,14 +303,17 @@ export async function loadShiftInput() {
   if (key !== si.key) {
     si.edits.clear();
     si.errors.clear();
+    si.editing.clear();
     $('#siResult').innerHTML = '';
   }
   si.key = key;
   si.data = data;
 
+  // The shift hours chosen stay chosen, saving included.
+  const jam = $('#siJam').value;
   $('#siJam').innerHTML = ['<option value="">—</option>',
     ...windows.map((w) => `<option value="${esc(w.value)}">${esc(w.label)}</option>`)].join('');
-  $('#siJam').value = '';
+  $('#siJam').value = windows.some((w) => w.value === jam) ? jam : '';
   const groups = [...new Set(data.machines.map((m) => m.kelompok_mesin).filter(Boolean))];
   if (!groups.includes(si.group)) si.group = '';
   $('#siGroup').innerHTML = ['<option value="">Semua</option>',
@@ -353,7 +370,7 @@ $('#siTable').addEventListener('keydown', (e) => {
   const box = e.target.closest('.si-in');
   if (!box || e.key !== 'Enter') return;
   e.preventDefault();
-  const boxes = $$(`#siTable .si-in[data-f="${box.dataset.f}"]`);
+  const boxes = $$(`#siTable .si-in[data-f="${box.dataset.f}"]`).filter((x) => !x.disabled);
   const next = boxes[boxes.indexOf(box) + (e.shiftKey ? -1 : 1)];
   if (next) { next.focus(); next.select(); }
 });
@@ -362,10 +379,56 @@ $('#siUndo').addEventListener('click', () => {
   if (!confirm('Batalkan semua perubahan yang belum disimpan?')) return;
   si.edits.clear();
   si.errors.clear();
+  si.editing.clear();
   paintTable();
 });
 
 window.addEventListener('beforeunload', (e) => { if (si.edits.size) e.preventDefault(); });
+
+/* ---- opening a saved row again, and taking it off ---- */
+
+function repaintRow(no_mc) {
+  const tr = $(`#siTable tr[data-mc="${CSS.escape(no_mc)}"]`);
+  const m = si.data.machines.find((x) => x.no_mc === no_mc);
+  if (tr && m) tr.innerHTML = cellsOf(m);
+  paintStatus();
+  return tr;
+}
+
+$('#siTable').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const no_mc = btn.closest('tr').dataset.mc;
+  const { family, tgl, shift } = si.data;
+  if (btn.dataset.act === 'edit') {
+    si.editing.add(no_mc);
+    const tr = repaintRow(no_mc);
+    tr?.querySelector('.si-in:not([data-f="mo"])')?.focus();
+  } else if (btn.dataset.act === 'cancel') {
+    si.editing.delete(no_mc);
+    si.edits.delete(no_mc);
+    si.errors.delete(no_mc);
+    repaintRow(no_mc);
+  } else if (btn.dataset.act === 'delete') {
+    if (!confirm(`Hapus ${no_mc} shift ${shift} tanggal ${fmt.day(tgl)}? Seluruh baris mesin ini untuk shift ini dihapus${
+      family === 'rapier' ? ', termasuk EFF, PL, CMPX dan PP' : ''}.`)) return;
+    btn.disabled = true;
+    const res = await fetch(`/api/input-shift?${new URLSearchParams({ family, tgl, shift, no_mc })}`, { method: 'DELETE' });
+    if (res.status === 401) return toLogin();
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      btn.disabled = false;
+      $('#siResult').innerHTML = `<div class="result result-err"><div class="result-title">${esc(d.error || 'Gagal menghapus')}</div></div>`;
+      return;
+    }
+    si.editing.delete(no_mc);
+    si.edits.delete(no_mc);
+    si.errors.delete(no_mc);
+    await loadShiftInput();
+    $('#siResult').innerHTML = `<div class="result result-ok"><div class="result-title">${
+      esc(`${no_mc} shift ${shift} ${fmt.day(tgl)} dihapus.`)}</div></div>`;
+  }
+});
 
 /* ---- saving ---- */
 
@@ -425,6 +488,7 @@ $('#siSave').addEventListener('click', async () => {
       + ` (${fmt.int(d.inserted)} baru, ${fmt.int(d.updated)} diperbarui)${d.beams ? `, ${fmt.int(d.beams)} beam` : ''}.`;
     si.edits.clear();
     si.errors.clear();
+    si.editing.clear();
     await loadShiftInput();
     $('#siResult').innerHTML = `<div class="result result-ok"><div class="result-title">${esc(msg)}</div></div>`;
   } catch (err) {
