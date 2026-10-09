@@ -1,0 +1,63 @@
+/* ------------------------------------------------------------------ *
+ * Master MO, Data Mesin and the import preview: forms and small tables
+ * ------------------------------------------------------------------ */
+
+.mm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; }
+.mm-table td, .rg-table td { white-space: nowrap; }
+.mm-table tbody tr, .mm-mismatch tbody tr { cursor: pointer; }
+tr.is-picked td { background: #eef4fc; }
+.mm-mismatch .table-wrap { margin: 10px 0 0; max-height: 260px; background: var(--surface); border-radius: var(--radius); }
+.mm-mismatch p { margin: 6px 0 0; }
+
+/* One MO's fields: a grid that folds to two, then one column. */
+.mm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.mm-in,
+.mm-save input,
+.mm-apply input[type="date"],
+.mm-apply input:not([type]) {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: inherit;
+  min-width: 0;
+}
+.mm-in:focus-visible, .mm-save input:focus-visible, .mm-apply input:focus-visible {
+  outline: 2px solid var(--series-1); outline-offset: -1px;
+}
+.mm-value { min-height: 30px; display: flex; align-items: center; color: var(--ink); }
+
+.mm-save, .mm-apply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  margin-top: 10px;
+}
+.mm-reason { flex: 1 1 240px; }
+.mm-reason input { width: 100%; }
+.mm-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); height: 30px; }
+.mm-danger { color: var(--critical); }
+.mm-h { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+#mmDetail .table-wrap { margin: 0; max-height: 300px; border: 1px solid var(--line-soft); border-radius: var(--radius); }
+
+/* Registry rows: an inactive loom is greyed; a row being changed is a form. */
+.rg-off td { color: var(--ink-muted); }
+.rg-table .rg-in { height: 26px; width: 100%; min-width: 64px; font-size: 12.5px; }
+.rg-table td.num .rg-in { width: 70px; text-align: right; }
+.rg-actions { display: flex; gap: 6px; align-items: center; }
+.rg-actions .rg-reason { width: 140px; }
+.rg-actions .btn { height: 26px; padding: 0 9px; }
+
+.rc-bad { color: var(--critical); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .mm-grid { grid-template-columns: 1fr 1fr; }
+  .mm-actions .btn { flex: 1 1 45%; }
+}

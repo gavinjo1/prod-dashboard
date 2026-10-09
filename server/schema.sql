@@ -539,8 +539,118 @@ CREATE OR REPLACE FUNCTION rapier_deret(no_mc text) RETURNS text AS $$
   END
 $$ LANGUAGE sql IMMUTABLE;
 
--- Both rules are applied to every production row however it arrives (import,
--- Input Shift, the entry form, an edit), so a re-upload cannot undo them.
+-- ---------------------------------------------------------------------------
+-- Master MO (PPIC)
+--
+-- One MO is one fabric and one pick. PPIC keeps this list — uploaded from
+-- MASTER PRODUCT or typed in — and it is the first place a pick is looked
+-- up. A loom changes MO only when a new beam goes up (naik cucuk), so a real
+-- change of product is a new MO; an edit to an existing MO here is a
+-- correction, logged with what it was before.
+CREATE TABLE IF NOT EXISTS product_master (
+  mo           text        PRIMARY KEY,
+  so           text,
+  kode_kain    text,
+  pick         numeric,
+  lusi_per_inch numeric,
+  lebar_inch   numeric,
+  lebar_cm     numeric,
+  konstruksi   text,
+  lusi         text,
+  ne_lusi      text,
+  pakan        text,
+  ne_pakan     text,
+  benang       text,
+  qty          numeric,
+  toleransi    numeric,
+  customer     text,
+  anyaman      text,
+  tgl_share    date,
+  source       text        NOT NULL DEFAULT 'manual',   -- 'import' or 'manual'
+  source_file  text,
+  updated_by   text,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS product_master_kode_idx ON product_master (kode_kain);
+
+CREATE TABLE IF NOT EXISTS product_master_log (
+  id          bigserial   PRIMARY KEY,
+  mo          text        NOT NULL,
+  action      text        NOT NULL CHECK (action IN ('create', 'update', 'delete', 'apply')),
+  before_json jsonb,
+  after_json  jsonb,
+  reason      text,
+  affected    integer,
+  changed_by  text,
+  changed_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS product_master_log_mo ON product_master_log (mo, changed_at);
+
+-- A fabric code as the sheets mean it, whatever the spacing: "TWLST - 2",
+-- "TWLST-2" and "twlst 2" are one fabric.
+CREATE OR REPLACE FUNCTION kode_key(k text) RETURNS text AS $$
+  SELECT regexp_replace(upper(k), '[^A-Z0-9]', '', 'g')
+$$ LANGUAGE sql IMMUTABLE;
+
+-- The pick an MO had on a day: the master's, else the order header in force
+-- that day — the last one dated on or before it, or failing that the first
+-- after. (Not merely the nearest: a header dated tomorrow must not reprice
+-- today.)
+CREATE OR REPLACE FUNCTION mo_pick(p_mo text, p_tgl date) RETURNS numeric AS $$
+  SELECT COALESCE(
+    (SELECT m.pick FROM product_master m WHERE m.mo = p_mo AND m.pick > 0),
+    (SELECT o.pick FROM order_info o
+     WHERE o.mo = p_mo AND o.pick IS NOT NULL
+     ORDER BY (o.as_of > p_tgl), abs(o.as_of - p_tgl), o.as_of DESC
+     LIMIT 1))
+$$ LANGUAGE sql STABLE;
+
+-- ---------------------------------------------------------------------------
+-- What each production row keeps of its own
+--
+-- pick_used: the pick the row was worked out with, taken when it is written.
+-- Reports read it, so a later change to an order or to the master never
+-- reprices production already saved; correcting old rows is a separate,
+-- logged action (see /api/master/mo/apply).
+--
+-- manual: the row was typed or corrected on the dashboard. An Excel import
+-- never overwrites such a row; the difference is kept as a conflict for
+-- someone to decide.
+ALTER TABLE production ADD COLUMN IF NOT EXISTS pick_used numeric;
+ALTER TABLE edit_log   ADD COLUMN IF NOT EXISTS reason    text;
+-- Marked once, when the column is new: rows typed on the dashboard, and rows
+-- corrected there. After that it is the application's to set and clear (a
+-- conflict settled in favour of the file hands the row back to imports).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'production' AND column_name = 'manual') THEN
+    ALTER TABLE production ADD COLUMN manual boolean NOT NULL DEFAULT false;
+    UPDATE production SET manual = true
+    WHERE source_file = 'manual entry'
+       OR id IN (SELECT row_id FROM edit_log WHERE table_name = 'production' AND action = 'edit');
+  END IF;
+END $$;
+
+-- Rows from an Excel import that the dashboard would have overwritten.
+CREATE TABLE IF NOT EXISTS import_conflict (
+  id            bigserial   PRIMARY KEY,
+  batch_id      bigint      REFERENCES import_batch(id) ON DELETE CASCADE,
+  table_name    text        NOT NULL,
+  key_json      jsonb       NOT NULL,
+  incoming_json jsonb       NOT NULL,
+  existing_json jsonb       NOT NULL,
+  source_file   text,
+  status        text        NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'kept', 'replaced')),
+  resolved_by   text,
+  resolved_at   timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS import_conflict_open ON import_conflict (status, created_at);
+
+-- Every rule a production row is held to, however it arrives (import, Input
+-- Shift, the entry form, an edit), so no path can skip one:
+--   the type override (Rapier M1/M2 are ITEMA), Rapier's deret, and the pick.
 DROP TRIGGER IF EXISTS production_type_override ON production;
 DROP FUNCTION IF EXISTS production_type_override();
 CREATE OR REPLACE FUNCTION production_machine_rules() RETURNS trigger AS $$
@@ -555,18 +665,141 @@ BEGIN
   IF NEW.family = 'rapier' THEN
     NEW.kelompok_mesin := rapier_deret(NEW.no_mc);
   END IF;
+  -- The pick is taken once: on insert, when the order changes, or when the
+  -- row has none yet. Otherwise it stays what the row was worked out with.
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.pick_used IS NULL THEN NEW.pick_used := mo_pick(NEW.mo, NEW.tgl); END IF;
+  ELSIF NEW.mo IS DISTINCT FROM OLD.mo OR NEW.tgl IS DISTINCT FROM OLD.tgl THEN
+    IF NEW.pick_used IS NOT DISTINCT FROM OLD.pick_used THEN NEW.pick_used := mo_pick(NEW.mo, NEW.tgl); END IF;
+  ELSIF NEW.pick_used IS NULL THEN
+    NEW.pick_used := mo_pick(NEW.mo, NEW.tgl);
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS production_machine_rules ON production;
 CREATE TRIGGER production_machine_rules
-  BEFORE INSERT OR UPDATE OF type_mc, kelompok_mesin, no_mc, family ON production
+  BEFORE INSERT OR UPDATE ON production
   FOR EACH ROW EXECUTE FUNCTION production_machine_rules();
 
--- Rows stored before the rules existed.
+-- An order header or master line arriving later fills in rows still without
+-- a pick — and only those: a pick already taken is never changed from here.
+CREATE OR REPLACE FUNCTION fill_missing_pick() RETURNS trigger AS $$
+BEGIN
+  UPDATE production SET pick_used = mo_pick(mo, tgl)
+  WHERE mo = NEW.mo AND pick_used IS NULL;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS order_info_fill_pick ON order_info;
+CREATE TRIGGER order_info_fill_pick
+  AFTER INSERT OR UPDATE OF pick ON order_info
+  FOR EACH ROW WHEN (NEW.pick IS NOT NULL) EXECUTE FUNCTION fill_missing_pick();
+DROP TRIGGER IF EXISTS product_master_fill_pick ON product_master;
+CREATE TRIGGER product_master_fill_pick
+  AFTER INSERT OR UPDATE OF pick ON product_master
+  FOR EACH ROW WHEN (NEW.pick IS NOT NULL) EXECUTE FUNCTION fill_missing_pick();
+
+-- Rows stored before these rules existed.
 UPDATE production p SET type_mc = o.type_mc
 FROM machine_type_override o
 WHERE p.family = o.family AND p.no_mc = o.no_mc AND p.type_mc IS DISTINCT FROM o.type_mc;
 UPDATE production SET kelompok_mesin = rapier_deret(no_mc)
 WHERE family = 'rapier' AND kelompok_mesin IS DISTINCT FROM rapier_deret(no_mc);
+UPDATE production SET pick_used = mo_pick(mo, tgl)
+WHERE pick_used IS NULL AND mo IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Machine registry
+--
+-- Each loom once, with what it is: type, group, fabrics woven at once, target
+-- RPM, width (Shuttle). A shift typed in takes these from here; a row already
+-- saved keeps the values it was worked out with. Before this, a loom's
+-- attributes were read off its latest production row, so one wrong row was
+-- passed on to the next shift.
+CREATE TABLE IF NOT EXISTS machine (
+  family         text        NOT NULL,
+  no_mc          text        NOT NULL,
+  type_mc        text,
+  kelompok_mesin text,
+  jml_kain       numeric,
+  rpm_target     numeric,
+  width          integer,
+  active         boolean     NOT NULL DEFAULT true,
+  note           text,
+  updated_by     text,
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (family, no_mc)
+);
+
+CREATE TABLE IF NOT EXISTS machine_log (
+  id          bigserial   PRIMARY KEY,
+  family      text        NOT NULL,
+  no_mc       text        NOT NULL,
+  action      text        NOT NULL CHECK (action IN ('create', 'update')),
+  before_json jsonb,
+  after_json  jsonb,
+  reason      text,
+  changed_by  text,
+  changed_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- First filled, once, from each loom's latest production row; a loom not seen
+-- for 60 days of its family's data starts inactive. Never overwrites the
+-- registry; a loom that turns up later is added by the trigger below.
+INSERT INTO machine (family, no_mc, type_mc, kelompok_mesin, jml_kain, rpm_target, width, active, note)
+SELECT DISTINCT ON (p.family, p.no_mc) p.family, p.no_mc, p.type_mc, p.kelompok_mesin,
+       CASE WHEN p.family = 'shuttle' THEN 1 ELSE p.jml_kain END,
+       p.rpm_target,
+       CASE WHEN p.family = 'shuttle' THEN substring(p.type_mc FROM '(\d+)\s*$')::integer END,
+       p.tgl > (SELECT max(tgl) FROM production x WHERE x.family = p.family) - 60,
+       'dari data produksi terakhir'
+FROM production p
+WHERE p.no_mc IS NOT NULL AND p.no_mc <> ''
+  AND NOT EXISTS (SELECT 1 FROM machine)   -- once: later looms register themselves
+ORDER BY p.family, p.no_mc, p.tgl DESC, p.shift DESC
+ON CONFLICT (family, no_mc) DO NOTHING;
+
+-- A loom first seen in an import is registered as it came; once only.
+CREATE OR REPLACE FUNCTION register_new_machines() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO machine (family, no_mc, type_mc, kelompok_mesin, jml_kain, rpm_target, width, note)
+  SELECT DISTINCT ON (n.family, n.no_mc) n.family, n.no_mc, n.type_mc, n.kelompok_mesin,
+         CASE WHEN n.family = 'shuttle' THEN 1 ELSE n.jml_kain END, n.rpm_target,
+         CASE WHEN n.family = 'shuttle' THEN substring(n.type_mc FROM '(\d+)\s*$')::integer END,
+         'terdaftar otomatis dari ' || coalesce(n.source_file, 'input')
+  FROM new_rows n
+  WHERE n.no_mc IS NOT NULL AND n.no_mc <> ''
+  ORDER BY n.family, n.no_mc, n.tgl DESC
+  ON CONFLICT (family, no_mc) DO NOTHING;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS production_register_machines ON production;
+CREATE TRIGGER production_register_machines
+  AFTER INSERT ON production REFERENCING NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION register_new_machines();
+
+-- ---------------------------------------------------------------------------
+-- How each production figure came to be
+--
+-- calc names what produced a row's metres, so one number is never mistaken
+-- for another:
+--   excel      read from an imported workbook (worked out there)
+--   typed      metres typed in by a person (Shuttle METER, the edit form)
+--   ajl-1, rapier-1, shuttle-1
+--              worked out on the dashboard from the readings, by version 1 of
+--              that family's formula (server/lib/machine-types.js)
+-- When a formula changes its version does too; rows keep the version they
+-- were worked out with, and re-working them is an explicit, logged action.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'production' AND column_name = 'calc') THEN
+    ALTER TABLE production ADD COLUMN calc text;
+    UPDATE production SET calc = CASE WHEN source_file = 'manual entry' THEN family || '-1' ELSE 'excel' END;
+  END IF;
+END $$;

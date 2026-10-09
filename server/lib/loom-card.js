@@ -110,7 +110,7 @@ export function checkBeam(b, no_mc, today) {
     id, no_mc, tgl_naik, no_beam: text(b.no_beam, 40, 'No. Beam', no_mc),
     tgl_kanji: dateIn(b.tgl_kanji, 'TGL KANJI', no_mc), kp: text(b.kp, 40, 'KP', no_mc), panjang_beam,
     kode_kain: text(b.kode_kain, 60, 'Kode kain', no_mc), lusi: text(b.lusi, 80, 'Lusi', no_mc),
-    pakan: text(b.pakan, 120, 'Pakan', no_mc), ket_benang: text(b.ket_benang, 20, 'KET', no_mc)?.toUpperCase() ?? null
+    pakan: text(b.pakan, 120, 'Pakan', no_mc), ket_benang: text(b.ket_benang, 200, 'KET BENANG', no_mc)
   };
 }
 

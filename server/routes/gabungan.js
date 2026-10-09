@@ -111,9 +111,7 @@ const GAB_SOURCES = {
         WITH g AS (
           SELECT g.family, g.tgl, g.bs + g.rk AS bs, g.grade_a + g.grade_b AS ab,
                  COALESCE(
-                   (SELECT o.pick FROM order_info o
-                     WHERE o.mo = g.mo AND o.pick IS NOT NULL
-                     ORDER BY abs(o.as_of - g.tgl), o.as_of DESC LIMIT 1),
+                   mo_pick(g.mo, g.tgl),
                    (SELECT o.pick FROM order_info o
                      WHERE o.kode_kain = g.kode_kain AND o.pick IS NOT NULL
                      ORDER BY abs(o.as_of - g.tgl), o.as_of DESC LIMIT 1)

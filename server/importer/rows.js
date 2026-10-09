@@ -132,6 +132,117 @@ export function dedupe(records, keyOf) {
   return [...seen.values()];
 }
 
+/* ------------------------------------------------------------------ *
+ * Deciding what an import may write
+ *
+ * One policy for every sheet that lands in production or grade:
+ *
+ *   new row                      written
+ *   same values as stored        left alone (counted as unchanged)
+ *   stored row came from import  written, its old values kept for undo
+ *   stored row typed or corrected on the dashboard (production.manual)
+ *                                never overwritten: kept as a conflict for
+ *                                someone to decide (import_conflict)
+ *
+ * Values are compared as the database will hold them: a loom whose type is
+ * overridden, and Rapier's deret, are applied to the incoming row first, or
+ * every re-import of the same file would look like a change. HIT RPM and
+ * KETIK RPM are worked out from the RPM when a shift is typed in; a sheet
+ * without those columns is not taken to differ there.
+ * ------------------------------------------------------------------ */
+
+const KEY = {
+  production: ['family', 'tgl', 'shift', 'no_mc'],
+  grade: ['family', 'tgl', 'mo', 'kode_kain']
+};
+
+/** Rapier's row pair from a machine number, as rapier_deret() in the schema. */
+export function rapierDeret(no_mc) {
+  const c = String(no_mc ?? '').trim().toUpperCase().charCodeAt(0);
+  if (!(c >= 65 && c <= 90)) return null;
+  const first = 65 + 2 * Math.floor((c - 65) / 2);
+  return String.fromCharCode(first, first + 1);
+}
+
+// Worked out on the dashboard from the RPM; a file that leaves them out does not differ.
+const DERIVED = new Set(['hit_rpm', 'ketik_rpm']);
+
+const same = (a, b) => {
+  const blank = (v) => v === null || v === undefined || v === '';
+  if (blank(a) || blank(b)) return blank(a) && blank(b);
+  const na = Number(a);
+  const nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && typeof a !== 'string' && typeof b !== 'string') {
+    return Math.abs(na - nb) < 1e-9;
+  }
+  return String(a).trim() === String(b).trim();
+};
+
+export async function planRows(client, dataset, records) {
+  const key = KEY[dataset];
+  if (!key || !records.length) return { write: records, unchanged: 0, conflicts: [] };
+  const cols = dataset === 'production' ? PROD_COLS : GRADE_COLS;
+  const compare = cols.filter((c) => !key.includes(c));
+  const keyOf = (r) => key.map((c) => String(r[c] ?? '')).join('|');
+
+  const { rows: stored } = await client.query(`
+    SELECT t.*, t.tgl::text AS tgl FROM ${dataset} t
+    JOIN unnest($1::text[], $2::date[], $3::text[], $4::text[]) AS k(${key.join(', ')})
+      USING (${key.join(', ')})`,
+  key.map((c) => records.map((r) => r[c] ?? null)));
+  const byKey = new Map(stored.map((r) => [keyOf(r), r]));
+
+  let overrides = new Map();
+  if (dataset === 'production') {
+    const { rows } = await client.query(
+      `SELECT family, no_mc, type_mc FROM machine_type_override WHERE family = ANY($1)`,
+      [[...new Set(records.map((r) => r.family))]]);
+    overrides = new Map(rows.map((r) => [`${r.family}|${r.no_mc}`, r.type_mc]));
+  }
+
+  const write = [];
+  const conflicts = [];
+  let unchanged = 0;
+  for (const rec of records) {
+    const was = byKey.get(keyOf(rec));
+    if (!was) { write.push(rec); continue; }
+    const incoming = { ...rec };
+    if (dataset === 'production') {
+      incoming.type_mc = overrides.get(`${rec.family}|${rec.no_mc}`) ?? rec.type_mc;
+      if (rec.family === 'rapier') incoming.kelompok_mesin = rapierDeret(rec.no_mc);
+    }
+    const differs = compare.filter((c) => !same(incoming[c], was[c])
+      && !(DERIVED.has(c) && (incoming[c] === null || incoming[c] === undefined)));
+    if (!differs.length) { unchanged++; continue; }
+    if (was.manual) { conflicts.push({ rec, was, differs }); continue; }
+    write.push(rec);
+  }
+  return { write, unchanged, conflicts };
+}
+
+/**
+ * Keeps each refused row, with what is stored, for someone to decide — once:
+ * the same row from a second sheet of the workbook, or from the same file
+ * uploaded again, is not recorded twice while the first is still open.
+ */
+export async function recordConflicts(client, batchId, dataset, conflicts, sourceFile) {
+  const key = KEY[dataset];
+  let recorded = 0;
+  for (const { rec, was, differs } of conflicts) {
+    const { rowCount } = await client.query(`
+      INSERT INTO import_conflict (batch_id, table_name, key_json, incoming_json, existing_json, source_file)
+      SELECT $1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6
+      WHERE NOT EXISTS (
+        SELECT 1 FROM import_conflict c
+        WHERE c.status = 'open' AND c.table_name = $2 AND c.key_json = $3::jsonb
+          AND c.incoming_json - '_differs' = $4::jsonb - '_differs')`,
+    [batchId, dataset, JSON.stringify(Object.fromEntries(key.map((c) => [c, rec[c]]))),
+      JSON.stringify({ ...rec, _differs: differs }), JSON.stringify(was), sourceFile]);
+    recorded += rowCount;
+  }
+  return recorded;
+}
+
 export async function upsert(client, dataset, records, sourceFile, editedBy = null, batchId = null) {
   // Same shape as the normal return: the caller destructures the result, and a
   // bare 0 left `written` undefined, which import_log then stored as NULL for
@@ -145,7 +256,8 @@ export async function upsert(client, dataset, records, sourceFile, editedBy = nu
   // Only production carries an editor. A row imported before sign-in existed
   // keeps NULL unless this run actually rewrites it.
   const credited = dataset === 'production';
-  const all = [...cols, 'source_file', ...(credited ? ['edited_by', 'batch_id'] : [])];
+  // A production row from a workbook carries the workbook's own figure.
+  const all = [...cols, 'source_file', ...(credited ? ['edited_by', 'batch_id', 'calc'] : [])];
   const updates = cols.filter((c) => !conflict.includes(c));
 
   // Re-importing the same workbook re-writes every row it contains. Crediting
@@ -166,7 +278,7 @@ export async function upsert(client, dataset, records, sourceFile, editedBy = nu
     const values = [];
     const tuples = batch.map((rec, r) => {
       const ph = all.map((_, c) => `$${r * all.length + c + 1}`);
-      values.push(...cols.map((c) => rec[c]), sourceFile, ...(credited ? [editedBy, batchId] : []));
+      values.push(...cols.map((c) => rec[c]), sourceFile, ...(credited ? [editedBy, batchId, 'excel'] : []));
       return `(${ph.join(',')})`;
     });
 
@@ -178,8 +290,9 @@ export async function upsert(client, dataset, records, sourceFile, editedBy = nu
       ON CONFLICT ${conflict} DO UPDATE SET
         ${updates.map((c) => `${c} = EXCLUDED.${c}`).join(', ')},
         source_file = EXCLUDED.source_file,
-        ${credited ? `edited_by = ${stamp}, batch_id = EXCLUDED.batch_id,` : ''}
+        ${credited ? `edited_by = ${stamp}, batch_id = EXCLUDED.batch_id, calc = EXCLUDED.calc,` : ''}
         imported_at = now()
+      ${table === 'production' ? 'WHERE NOT production.manual' : ''}
       RETURNING (xmax = 0) AS is_new`;
     const res = await client.query(sql, values);
     for (const row of res.rows) row.is_new ? inserted++ : updated++;

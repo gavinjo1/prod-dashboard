@@ -11,12 +11,18 @@ import { readOrderInfo, readShuttleOrders, upsertOrderInfo, upsertSaldo } from '
 import { FIELD_LABEL, diagnose } from './diagnose.js';
 import { readTypeLegend, upsertTypes } from './legend.js';
 import { readSodokanTable, upsertSodokan } from './sodokan.js';
-import { FAMILIES, buildRows, dedupe, shuttleGaps, upsert } from './rows.js';
+import { FAMILIES, buildRows, dedupe, planRows, recordConflicts, shuttleGaps, upsert } from './rows.js';
 export { isSupported } from './workbook.js';
 export { FAMILIES } from './rows.js';
 
+/**
+ * The whole file is one transaction: if any part of it cannot be written,
+ * none of it is, and the reason is reported. `dryRun` does everything but the
+ * final commit, so the result says exactly what an import would do — rows new,
+ * changed, unchanged, and refused because they were typed on the dashboard.
+ */
 export async function importBuffer(buffer, fileName,
-  { only = null, dataset = null, editedBy = null, family = 'ajl' } = {}) {
+  { only = null, dataset = null, editedBy = null, family = 'ajl', dryRun = false } = {}) {
   // Semua takes the combined report only. Everything else in a workbook — the
   // daily sheets, order headers, capacity, the type legend — belongs to one
   // family, and filed under Semua it would land under none, or the wrong one.
@@ -25,15 +31,25 @@ export async function importBuffer(buffer, fileName,
   const wb = readWorkbook(buffer, fileName);
   const results = [];
   const client = await pool.connect();
+  await client.query('BEGIN');
+  let batchId = null;
+  let dropped = 0;
+  // Which part was being written when something failed, for the message.
+  let part = null;
+  // Any failure while writing stops the whole file.
+  const fail = (where, err) => {
+    part = where;
+    throw err;
+  };
 
-  // One batch per uploaded file, covering every sheet in it: undoing half a
-  // workbook would leave the daily sheets disagreeing with BULANAN.
-  const batchId = await openBatch(client, fileName, editedBy, combined ? null : family);
   // The shuttle order list has no date of its own; it is recorded as of the
   // last day of shuttle production in the same file.
   let shuttleLastDay = null;
 
   try {
+    // One batch per uploaded file, covering every sheet in it: undoing half a
+    // workbook would leave the daily sheets disagreeing with BULANAN.
+    batchId = await openBatch(client, fileName, editedBy, combined ? null : family);
     for (const name of wb.SheetNames) {
       if (only && !only.includes(name)) continue;
 
@@ -76,32 +92,33 @@ export async function importBuffer(buffer, fileName,
       const unique = dedupe(records, keyOf);
 
       try {
-        await client.query('BEGIN');
-        await snapshot(client, batchId, table, unique);
+        // Only what is new or changed is written; a row typed on the
+        // dashboard is never overwritten, only recorded as a conflict.
+        const plan = await planRows(client, table, unique);
+        await snapshot(client, batchId, table, plan.write);
         await snapshot(client, batchId, 'saldo', saldo);
-        const { inserted, updated, written } = await upsert(client, table, unique, fileName, editedBy, batchId);
+        const { inserted, updated, written } = await upsert(client, table, plan.write, fileName, editedBy, batchId);
+        const conflicts = await recordConflicts(client, batchId, table, plan.conflicts, fileName);
         const saldoWritten = await upsertSaldo(client, saldo, fileName);
         await client.query(
           `INSERT INTO import_log (file_name, sheet_name, dataset, rows_read, rows_written, rows_skipped, status, message, imported_by, family, batch_id)
            VALUES ($1,$2,$3,$4,$5,$6,'ok',$7,$8,$9,$10)`,
           [fileName, name, found.dataset, records.length + skipped, written, skipped, warning, editedBy, family, batchId]
         );
-        await client.query('COMMIT');
         results.push({
           sheet: name, dataset: found.dataset, status: 'ok',
           read: records.length + skipped, written, inserted, updated, skipped,
+          // Rows refused because they were typed on the dashboard, and how
+          // many of them are newly recorded (the rest are already open).
+          unchanged: plan.unchanged, conflicts: plan.conflicts.length, conflicts_recorded: conflicts,
+          conflict_sample: plan.conflicts.slice(0, 5).map((c) => ({
+            tgl: c.rec.tgl, shift: c.rec.shift, no_mc: c.rec.no_mc, mo: c.rec.mo, fields: c.differs })),
           saldo: saldoWritten,
           duplicates: records.length - unique.length,
           ...(warning ? { warning } : {})
         });
       } catch (err) {
-        await client.query('ROLLBACK');
-        await client.query(
-          `INSERT INTO import_log (file_name, sheet_name, dataset, status, message, imported_by, family, batch_id)
-           VALUES ($1,$2,$3,'error',$4,$5,$6,$7)`,
-          [fileName, name, found.dataset, err.message, editedBy, family, batchId]
-        ).catch(() => {});
-        results.push({ sheet: name, dataset: found.dataset, status: 'error', message: err.message });
+        fail(name, err);
       }
     }
     // The legend lives on the formatted daily sheets, which carry no data rows.
@@ -145,8 +162,7 @@ export async function importBuffer(buffer, fileName,
           results.push({ sheet: '(order headers)', dataset: 'order_info', status: 'ok',
             read: orders.size, written, skipped: orders.size - written });
         } catch (err) {
-          results.push({ sheet: '(order headers)', dataset: 'order_info',
-            status: 'error', message: err.message });
+          fail('(order headers)', err);
         }
       }
 
@@ -169,7 +185,7 @@ export async function importBuffer(buffer, fileName,
             results.push({ sheet: name, dataset: 'sodokan', status: 'ok',
               read: table.entries.length, written, skipped: 0, ...(warning ? { warning } : {}) });
           } catch (err) {
-            results.push({ sheet: name, dataset: 'sodokan', status: 'error', message: err.message });
+            fail(name, err);
           }
           break;
         }
@@ -188,8 +204,7 @@ export async function importBuffer(buffer, fileName,
           results.push({ sheet: `(daily capacity · ${name})`, dataset: 'daily_capacity',
             status: 'ok', read: cap.length, written, skipped: 0 });
         } catch (err) {
-          results.push({ sheet: `(daily capacity · ${name})`, dataset: 'daily_capacity',
-            status: 'error', message: err.message });
+          fail(`(daily capacity · ${name})`, err);
         }
         break;
       }
@@ -215,7 +230,7 @@ export async function importBuffer(buffer, fileName,
             read: gab.length, written: w.written, inserted: w.inserted, updated: w.updated,
             skipped: 0, duplicates: gab.length - unique.length });
         } catch (err) {
-          results.push({ sheet: name, dataset: 'gabungan', status: 'error', message: err.message });
+          fail(name, err);
         }
       }
 
@@ -235,22 +250,30 @@ export async function importBuffer(buffer, fileName,
               read: legend.size, written, skipped: legend.size - written });
           }
         } catch (err) {
-          results.push({ sheet: '(machine type names)', dataset: 'machine_type',
-            status: 'error', message: err.message });
+          fail('(machine type names)', err);
         }
       }
     }
+    // A batch that recorded nothing — the file held no recognisable sheet, or
+    // nothing in it differed from what is stored — is not an import anyone
+    // can undo. Left in place it became the newest batch, and the real import
+    // before it could no longer be undone until this empty one was.
+    ({ rowCount: dropped } = await client.query(
+      `DELETE FROM import_batch b WHERE b.id = $1
+         AND NOT EXISTS (SELECT 1 FROM import_undo u WHERE u.batch_id = b.id)
+         AND NOT EXISTS (SELECT 1 FROM import_conflict c WHERE c.batch_id = b.id)`, [batchId]));
+    await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    // Logged outside the rolled-back transaction, so the failure is on record.
+    await pool.query(
+      `INSERT INTO import_log (file_name, sheet_name, dataset, status, message, imported_by, family)
+       VALUES ($1,$2,'file','error',$3,$4,$5)`,
+      [fileName, part, err.message, editedBy, combined ? null : family]).catch(() => {});
+    throw new AppError(`Import dibatalkan, tidak ada yang tersimpan. ${part ? `Sheet ${part}: ` : ''}${err.message}`);
   } finally {
     client.release();
   }
-
-  // A batch that recorded nothing — the file held no recognisable sheet, or
-  // every sheet failed and rolled back — is not an import anyone can undo.
-  // Left in place it became the newest batch, and the real import before it
-  // could no longer be undone until this empty one was.
-  const { rowCount: dropped } = await pool.query(
-    `DELETE FROM import_batch b WHERE b.id = $1
-       AND NOT EXISTS (SELECT 1 FROM import_undo u WHERE u.batch_id = b.id)`, [batchId]);
 
   if (combined && !results.some((r) => r.dataset === 'gabungan' && r.status === 'ok')) {
     // Nothing combined in it: say where a daily report goes rather than list
@@ -282,7 +305,8 @@ export async function importBuffer(buffer, fileName,
   }
   // Attached rather than wrapped: callers already treat this as the array of
   // per-sheet results, and one of them is the client.
-  results.batch_id = dropped ? null : batchId;
+  results.batch_id = dropped || dryRun ? null : batchId;
+  results.dry_run = dryRun;
   return results;
 }
 

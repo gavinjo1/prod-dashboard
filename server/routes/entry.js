@@ -126,6 +126,7 @@ router.post('/api/entry', requireRole('operator'), (req, res) => send(res, async
   // Shuttle: SODOKAN from the counter and METER from the table when they were
   // not typed, both worked out as the workbook does. Never guessed: what
   // cannot be worked out is asked for.
+  let meterTyped = false;
   if (b.family === 'shuttle') {
     if (num.sodokan === null) {
       if (num.ketik === null) return res.status(400).json({ error: 'Isi KETIK atau SODOKAN.' });
@@ -136,6 +137,8 @@ router.post('/api/entry', requireRole('operator'), (req, res) => send(res, async
       }
       num.sodokan = sodokanOf(num.ketik, before.ketik);
     }
+    // Metres typed in are the person's figure; worked out, the formula's.
+    meterTyped = num.produksi !== null;
     if (num.produksi === null) {
       const width = widthOf(b.type_mc);
       const meter = b.kode_kain && width ? await meterOf(b.kode_kain, width, num.sodokan) : null;
@@ -159,7 +162,9 @@ router.post('/api/entry', requireRole('operator'), (req, res) => send(res, async
     jam_mulai, jam_selesai, edited_by: req.user,
     // The family on screen, as for an import: AJL's A1 and Rapier's A1 are
     // different machines, and the key has to say which one this shift is.
-    family: b.family, ketik: num.ketik, sodokan: num.sodokan
+    family: b.family, ketik: num.ketik, sodokan: num.sodokan,
+    // This form takes AJL and Rapier output as metres typed in.
+    calc: b.family === 'shuttle' && !meterTyped ? 'shuttle-1' : 'typed'
   });
   res.json(row);
 }));
@@ -213,7 +218,8 @@ router.patch('/api/production/:id', requireRole('operator'), (req, res) => send(
         mo = $2, kode_kain = $3, rpm = $4, rpm_target = $5, produksi = $6,
         ket_bb = $7, jam_mulai = $8, jam_selesai = $9,
         hit_rpm = $10, ketik_rpm = $4, ketik_prod = $11,
-        edited_by = $12
+        edited_by = $12, manual = true,
+        calc = CASE WHEN $6::numeric IS DISTINCT FROM produksi THEN 'typed' ELSE calc END
       WHERE id = $1 RETURNING *`,
       [id, text(b.mo), text(b.kode_kain), num.rpm, num.rpm_target, num.produksi,
        text(b.ket_bb), hour(b.jam_mulai), hour(b.jam_selesai),

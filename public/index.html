@@ -27,6 +27,8 @@
     <button class="tab" data-tab="quality" data-family="ajl rapier shuttle" role="tab">Kualitas</button>
     <button class="tab" data-tab="efisiensi" data-family="ajl rapier shuttle" role="tab">Efisiensi Kain</button>
     <button class="tab" data-tab="shiftinput" data-family="ajl rapier shuttle" role="tab">Input Shift</button>
+    <button class="tab" data-tab="mesin" data-family="ajl rapier shuttle" role="tab">Data Mesin</button>
+    <button class="tab" data-tab="master" data-family="semua ajl rapier shuttle" role="tab">Master MO</button>
     <button class="tab" data-tab="import" data-family="semua ajl rapier shuttle" role="tab">Import</button>
     <button class="tab" data-tab="pabrik" data-family="ajl" role="tab">Pabrik</button>
     <button class="tab" data-tab="users" role="tab" id="tabUsers" hidden>Pengguna</button>
@@ -282,20 +284,15 @@
       <button class="btn btn-primary" id="siSave" disabled>Simpan shift</button>
       <button class="btn btn-quiet" id="siUndo" disabled>Batalkan perubahan</button>
       <span class="si-dirty" id="siDirty"></span>
+      <span class="si-export">
+        <a class="btn" id="siExportShift" href="#" download>Excel shift ini</a>
+        <a class="btn" id="siExportDay" href="#" download>Excel seharian</a>
+      </span>
     </div>
     <div id="siResult"></div>
     <p class="note-line si-legend" id="siLegend">Rapier: PL = putus lusi, PP = putus pakan, CMPX = putus per 100.000 pick.
       CMPX yang dikosongkan dihitung dari PL/PP, RPM dan EFF. COUNT adalah counter mesin.</p>
     <datalist id="siMos"></datalist>
-    <datalist id="siKets">
-      <option value="HB"></option><option value="BB"></option><option value="TY"></option>
-      <option value="HB+BB"></option><option value="TY+BB"></option><option value="HB+TY"></option>
-      <option value="NC"></option><option value="NCCK"></option><option value="TE"></option>
-      <option value="TYING"></option><option value="G.SISIR"></option><option value="BONGKAR"></option>
-      <option value="TROUBLE"></option><option value="TUNGGU BEAM"></option>
-    </datalist>
-    <datalist id="siBenang"><option value="ORI"></option><option value="SWP"></option>
-      <option value="RWD"></option><option value="SMR"></option><option value="ORI &amp; SWP"></option></datalist>
   </section>
 </div>
 
@@ -600,6 +597,70 @@
       </div>
     </section>
   </div>
+
+  <!-- Rows an import did not overwrite because they were typed or corrected
+       on the dashboard, each waiting for someone to choose. -->
+  <section class="card" id="conflictCard">
+    <div class="card-head">
+      <h2>Konflik import <span class="pill pill-err" id="conflictCount" hidden></span></h2>
+      <p class="card-sub">Baris yang sudah diisi atau dikoreksi di dashboard tidak ditimpa oleh file. Pilih angka mana yang dipakai.</p>
+    </div>
+    <div id="conflictOut"></div>
+    <div class="table-wrap">
+      <table class="data" id="conflictTable"><thead></thead><tbody></tbody></table>
+    </div>
+  </section>
+</div>
+
+<!-- Each loom of the family: what it is (the registry), and the saved
+     metres checked against the formula. -->
+<div class="panel" id="panel-mesin">
+  <section class="card">
+    <div class="card-head-row">
+      <div class="card-head">
+        <h2 id="rgTitle">Data mesin</h2>
+        <p class="card-sub" id="rgSub"></p>
+      </div>
+      <input type="search" class="search" id="rgSearch" placeholder="Cari mesin…">
+    </div>
+    <div id="rgResult"></div>
+    <div class="table-wrap"><table class="data rg-table" id="rgTable"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Cek rumus</h2>
+      <p class="card-sub" id="rcSub"></p>
+    </div>
+    <div class="si-bar">
+      <label class="field"><span>Dari</span><input type="date" id="rcFrom"></label>
+      <label class="field"><span>Sampai</span><input type="date" id="rcTo"></label>
+      <button class="btn btn-primary" id="rcRun">Cek</button>
+    </div>
+    <div id="rcOut"></div>
+  </section>
+</div>
+
+<!-- PPIC's master: one MO, one fabric, one pick. -->
+<div class="panel" id="panel-master">
+  <section class="card">
+    <div class="card-head-row">
+      <div class="card-head">
+        <h2>Master MO</h2>
+        <p class="card-sub" id="mmSub"></p>
+      </div>
+      <input type="search" class="search" id="mmSearch" placeholder="Cari MO, kode kain, customer…">
+    </div>
+    <div class="mm-actions" id="mmActions">
+      <button class="btn" id="mmNew">+ MO baru</button>
+      <button class="btn" id="mmUpload">Upload MASTER PRODUCT</button>
+      <input type="file" id="mmFile" accept=".xlsx,.xlsm,.xls,.xlsb" hidden>
+    </div>
+    <div id="mmImport"></div>
+    <div id="mmMismatch"></div>
+    <div class="table-wrap"><table class="data mm-table" id="mmTable"><thead></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card" id="mmDetail" hidden></section>
 </div>
 
 <!-- ------------------------------------------------------------------ -->

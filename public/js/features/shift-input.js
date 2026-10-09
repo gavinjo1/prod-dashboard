@@ -193,7 +193,7 @@ function cellsOf(m) {
     <td class="si-kode">${esc(d.kode ?? '—')}</td>`;
   const tail = `
     <td class="num si-pct">${d.pct === null ? '' : fmt.pct(d.pct)}</td>
-    <td>${input(m, 'ket_bb', 'si-note', 'placeholder="TYING, OH…"')}</td>
+    <td>${input(m, 'ket_bb', 'si-note', 'placeholder="keterangan"')}</td>
     <td class="si-st ${st.cls}">${esc(st.text)}</td>${actionsOf(m)}`;
   if (fam === 'shuttle') {
     return `${common}
@@ -207,7 +207,7 @@ function cellsOf(m) {
     // The day sheet's order: the beam, then RPM … COUNT, then the note.
     const beam = BEAM.map(([f, label, w]) => `<td class="si-beamcol">${input(m, `b_${f}`, w,
       `aria-label="${esc(`${m.no_mc} ${label}`)}"${f.startsWith('tgl_') ? ' placeholder="dd/mm/yy"' : ''}${
-        f === 'ket_benang' ? ' list="siBenang"' : f === 'panjang_beam' ? ' inputmode="numeric"' : ''}`)}</td>`).join('');
+        f === 'panjang_beam' ? ' inputmode="numeric"' : ''}`)}</td>`).join('');
     const reading = (f, extra = '') => `<td>${input(m, f, 'si-num si-sm', `inputmode="decimal" ${extra}`)}</td>`;
     return `${common}${beam}
       ${reading('rpm', `placeholder="${esc(m.rpm_target ?? '')}"`)}${reading('eff')}${reading('pl')}
@@ -215,7 +215,7 @@ function cellsOf(m) {
       ${reading('cmpx_pp', `placeholder="${esc(d.cmpx?.cmpx_pp ?? '')}"`)}${reading('ketik')}
       <td class="num si-out">${one(d.output)}</td>
       <td class="num si-pct">${d.pct === null ? '' : fmt.pct(d.pct)}</td>
-      <td>${input(m, 'ket_bb', 'si-note', 'list="siKets" placeholder="HB, BB, TY…"')}</td>
+      <td>${input(m, 'ket_bb', 'si-note', 'placeholder="keterangan"')}</td>
       <td class="si-st ${st.cls}">${esc(st.text)}</td>${actionsOf(m)}`;
   }
   // The counter first: it is typed for every loom, the RPM only when read.
@@ -308,6 +308,10 @@ export async function loadShiftInput() {
   }
   si.key = key;
   si.data = data;
+  // What is saved for this date, as a workbook: this shift, or all three.
+  const xlsx = (q) => `/api/input-shift/export.xlsx?${new URLSearchParams({ family: data.family, tgl, ...q })}`;
+  $('#siExportShift').href = xlsx({ shift });
+  $('#siExportDay').href = xlsx({});
 
   // The shift hours chosen stay chosen, saving included.
   const jam = $('#siJam').value;
@@ -384,6 +388,11 @@ $('#siUndo').addEventListener('click', () => {
 });
 
 window.addEventListener('beforeunload', (e) => { if (si.edits.size) e.preventDefault(); });
+
+// The download is what is saved; typing not yet saved is not in it.
+['#siExportShift', '#siExportDay'].forEach((id) => $(id).addEventListener('click', (e) => {
+  if (si.edits.size && !confirm(`${si.edits.size} mesin belum disimpan dan tidak ikut di Excel. Tetap download?`)) e.preventDefault();
+}));
 
 /* ---- opening a saved row again, and taking it off ---- */
 
@@ -490,7 +499,14 @@ $('#siSave').addEventListener('click', async () => {
     si.errors.clear();
     si.editing.clear();
     await loadShiftInput();
-    $('#siResult').innerHTML = `<div class="result result-ok"><div class="result-title">${esc(msg)}</div></div>`;
+    // Shuttle: a corrected counter also changes the next shift's SODOKAN.
+    const chained = (d.chained ?? []).map((c) => (c.status === 'periksa'
+      ? `<li class="import-warn">⚠ ${esc(c.no_mc)} shift ${esc(c.shift)} ${esc(fmt.day(c.tgl))}: ${esc(c.message)}</li>`
+      : `<li>${esc(c.no_mc)} shift ${esc(c.shift)} ${esc(fmt.day(c.tgl))}: sodokan ${fmt.num(c.sodokan.before)} → ${
+        fmt.num(c.sodokan.after)}, meter ${fmt.num(c.meter.before)} → ${fmt.num(c.meter.after)}${
+        c.message ? ` <span class="import-warn">(${esc(c.message)})</span>` : ''}</li>`)).join('');
+    $('#siResult').innerHTML = `<div class="result result-ok"><div class="result-title">${esc(msg)}</div>${
+      chained ? `<p>Shift berikutnya ikut dihitung ulang karena ketik dikoreksi:</p><ul>${chained}</ul>` : ''}</div>`;
   } catch (err) {
     $('#siResult').innerHTML = `<div class="result result-err"><div class="result-title">Tidak tersimpan</div><p>${esc(err.message)}</p></div>`;
   } finally {

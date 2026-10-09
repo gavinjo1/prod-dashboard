@@ -81,9 +81,7 @@ router.get('/api/machine/:no', (req, res) => send(res, async () => {
     FROM (
       SELECT p.id, p.tgl::text AS date, p.shift, p.no_mc, p.family, p.source_file,
              p.mo, p.kode_kain, p.jml_kain,
-             (SELECT o.pick FROM order_info o
-               WHERE o.mo = p.mo AND o.pick IS NOT NULL
-               ORDER BY abs(o.as_of - p.tgl), o.as_of DESC LIMIT 1) AS pick,
+             p.pick_used AS pick,
              p.rpm, p.rpm_target, p.produksi, p.ket_bb, p.edited_by,
              to_char(p.jam_mulai, 'HH24:MI')   AS jam_mulai,
              to_char(p.jam_selesai, 'HH24:MI') AS jam_selesai

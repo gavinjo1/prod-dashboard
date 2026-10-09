@@ -13,6 +13,8 @@ import { loadOrderInfo } from './production/orders.js';
 import { loadPabrik } from './pabrik.js';
 import { loadEfisiensi } from './efisiensi.js';
 import { loadShiftInput } from './shift-input.js';
+import { loadMesin } from './mesin.js';
+import { loadMaster } from './master.js';
 import { loadQuality } from './quality.js';
 import { loadSummary } from './production/summary.js';
 import { loadUsers } from './users.js';
@@ -33,6 +35,10 @@ export async function refresh() {
     await loadEfisiensi();
   } else if (state.tab === 'shiftinput') {
     await loadShiftInput();
+  } else if (state.tab === 'mesin') {
+    await loadMesin();
+  } else if (state.tab === 'master') {
+    await loadMaster();
   } else if (state.tab === 'users') {
     if (session.role === 'admin') await loadUsers();
   } else if (state.tab === 'gabungan') {
@@ -52,7 +58,7 @@ export function switchTab(name) {
   $$('.panel').forEach((p) => p.classList.toggle('is-active', p.id === `panel-${name}`));
   // Machine-level filters mean nothing on the import screen.
   // The combined report goes month by month and has its own month picker.
-  const ownData = ['pabrik', 'users', 'gabungan', 'kosong', 'shiftinput'].includes(name);
+  const ownData = ['pabrik', 'users', 'gabungan', 'kosong', 'shiftinput', 'mesin', 'master'].includes(name);
   $('#filterBar').classList.toggle('is-hidden', name === 'import' || ownData);
   // Search answers with orders, so it stays on the combined report too: from
   // there it searches every family and opens the one that wove the order.

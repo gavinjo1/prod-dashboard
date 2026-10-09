@@ -21,9 +21,9 @@ export const pricedShifts = (where) => `r AS (
       FROM (
         SELECT p.tgl, p.family, p.shift, p.no_mc, p.type_mc, p.mo, p.kode_kain,
                p.produksi, p.rpm_target, p.jml_kain, p.sodokan,
-               (SELECT o.pick FROM order_info o
-                 WHERE o.mo = p.mo AND o.pick IS NOT NULL
-                 ORDER BY abs(o.as_of - p.tgl), o.as_of DESC LIMIT 1) AS pick
+               -- The pick the row was worked out with, kept on the row itself,
+               -- so a later order or master change never reprices it.
+               p.pick_used AS pick
         FROM production p ${where}
       ) q
     )`;

@@ -15,6 +15,15 @@ export function shiftBefore(tgl, shift) {
   return [d.toISOString().slice(0, 10), 'C'];
 }
 
+/** The shift after this one: A is followed by B, B by C, C by the next day's A. */
+export function shiftAfter(tgl, shift) {
+  if (shift === 'A') return [tgl, 'B'];
+  if (shift === 'B') return [tgl, 'C'];
+  const d = new Date(`${tgl}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return [d.toISOString().slice(0, 10), 'A'];
+}
+
 /**
  * SODOKAN is the counter's advance over the shift. A reading below the one
  * before means the counter was reset, and the reading itself is the advance.
@@ -66,6 +75,10 @@ export const SHUTTLE_FIXED = { jml_kain: 1, rpm: null, rpm_target: SHUTTLE_RPM }
  * Writes one machine-shift, replacing what was there. `db` is the pool's
  * query or a transaction's client. Per-fabric metres and the RPM total are
  * derived here, the way the workbook derives them; a shuttle row has neither.
+ *
+ * The row is marked manual — typed on the dashboard — so an Excel import
+ * cannot overwrite it, and keeps the pick it was worked out with (`pick_used`;
+ * left out, the database takes the MO's pick for the day).
  */
 export async function upsertProduction(db, r) {
   const jml = r.jml_kain || null;
@@ -76,8 +89,8 @@ export async function upsertProduction(db, r) {
     INSERT INTO production
       (tgl, shift, no_mc, mo, kode_kain, type_mc, kelompok_mesin, jml_kain,
        rpm, rpm_target, hit_rpm, produksi, ketik_rpm, ketik_prod, ket_bb, source_file,
-       jam_mulai, jam_selesai, edited_by, family, ketik, sodokan)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$13,$14,'manual entry',$15,$16,$17,$18,$19,$20)
+       jam_mulai, jam_selesai, edited_by, family, ketik, sodokan, pick_used, manual, calc)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$13,$14,'manual entry',$15,$16,$17,$18,$19,$20,$21,true,$22)
     ON CONFLICT (family, tgl, shift, no_mc) DO UPDATE SET
       mo = EXCLUDED.mo, kode_kain = EXCLUDED.kode_kain, type_mc = EXCLUDED.type_mc,
       kelompok_mesin = EXCLUDED.kelompok_mesin, jml_kain = EXCLUDED.jml_kain,
@@ -86,6 +99,7 @@ export async function upsertProduction(db, r) {
       ketik_prod = EXCLUDED.ketik_prod, ket_bb = EXCLUDED.ket_bb,
       jam_mulai = EXCLUDED.jam_mulai, jam_selesai = EXCLUDED.jam_selesai,
       edited_by = EXCLUDED.edited_by, ketik = EXCLUDED.ketik, sodokan = EXCLUDED.sodokan,
+      pick_used = EXCLUDED.pick_used, manual = true, calc = EXCLUDED.calc,
       source_file = 'manual entry', imported_at = now()
     RETURNING (xmax = 0) AS inserted, tgl::text, shift, no_mc, produksi, ketik, sodokan, edited_by,
               to_char(jam_mulai, 'HH24:MI') AS jam_mulai,
@@ -93,6 +107,7 @@ export async function upsertProduction(db, r) {
   [r.tgl, r.shift, r.no_mc, r.mo || null, r.kode_kain || null, r.type_mc || null,
     r.kelompok_mesin || null, jml, r.rpm ?? null, r.rpm_target ?? null, hit_rpm, r.produksi ?? null,
     ketik_prod, (r.ket_bb || '').trim() || null, r.jam_mulai ?? null, r.jam_selesai ?? null,
-    r.edited_by ?? null, r.family, r.ketik ?? null, r.sodokan ?? null]);
+    r.edited_by ?? null, r.family, r.ketik ?? null, r.sodokan ?? null, r.pick_used ?? null,
+    r.calc ?? `${r.family}-1`]);
   return { ...row, ketik_prod, hit_rpm };
 }
