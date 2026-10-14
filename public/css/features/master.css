@@ -4,20 +4,71 @@
 
 .mm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; }
 .mm-table td, .rg-table td { white-space: nowrap; }
-.mm-table tbody tr, .mm-mismatch tbody tr { cursor: pointer; }
+.mm-table tbody tr { cursor: pointer; }
+.mm-table tbody tr:hover td { background: var(--surface-sub); }
 tr.is-picked td { background: #eef4fc; }
-.mm-mismatch .table-wrap { margin: 10px 0 0; max-height: 260px; background: var(--surface); border-radius: var(--radius); }
-.mm-mismatch p { margin: 6px 0 0; }
+.mm-empty { padding: 20px; text-align: center; white-space: normal; }
 
-/* One MO's fields: a grid that folds to two, then one column. */
+/* The list's filters: what needs checking, everything, not used yet. */
+.mm-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.mm-filter {
+  height: 30px; padding: 0 12px; border: 1px solid var(--line-soft); border-radius: 15px;
+  background: var(--surface); color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.mm-filter span { color: var(--ink-muted); margin-left: 2px; }
+.mm-filter.is-on { border-color: var(--series-1); color: var(--series-1); background: var(--series-1-fill); }
+.mm-filter.is-on span { color: inherit; }
+.pill-note { background: #eef3fb; color: #1c5cab; }
+
+/* One MO */
+.mm-back { border: 0; background: none; padding: 0; margin: 0 0 10px; color: var(--series-1); font: inherit; font-size: 13px; cursor: pointer; }
+.mm-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 16px; flex-wrap: wrap; }
+.mm-head h2 { margin: 0; font-size: 15px; }
+.mm-head h2.mm-title, .mm-title { font-size: 19px; }
+.mm-used { margin: 10px 0 0; color: var(--ink-2); font-size: 13px; }
+.mm-small { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-muted); }
+.mm-link { border: 0; background: none; padding: 0; margin-left: 6px; color: var(--series-1); font: inherit; cursor: pointer; }
+.mm-danger { color: var(--critical); }
+.mm-actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mm-actions-row .btn:disabled { opacity: .45; cursor: not-allowed; }
+#mmOut:not(:empty) { margin-bottom: 14px; }
+
+/* What production says against the master: to check, fine, or marked. */
+.mm-status { border: 1px solid; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; font-size: 13.5px; }
+.mm-status p { margin: 4px 0; }
+.mm-status-title { font-size: 15px; font-weight: 600; margin: 0 0 6px !important; }
+.mm-warn { background: #fff8e8; border-color: #f2d48a; }
+.mm-ok { background: #f1f8f1; border-color: #cfe6cf; }
+.mm-note { background: #f2f6fc; border-color: #c9d9f0; }
+.mm-runs { margin: 10px 0 0; max-height: 340px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius); }
+.mm-runs td { white-space: nowrap; }
+.mm-diff { color: #9a5b00; font-weight: 600; }
+
+.mm-choice { margin-top: 14px; max-width: 720px; }
+.mm-opt {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface); cursor: pointer;
+}
+.mm-opt input { margin-top: 3px; }
+.mm-opt small { display: block; color: var(--ink-muted); font-size: 12.5px; }
+.mm-opt.is-on { border-color: var(--series-1); box-shadow: inset 0 0 0 1px var(--series-1); }
+.mm-summary { margin: 10px 0 0; padding: 10px 12px; background: var(--surface); border: 1px dashed var(--axis); border-radius: 8px; }
+.mm-reason-wide { display: block; margin-top: 10px; max-width: 720px; }
+.mm-reason-wide input { width: 100%; }
+
+/* The MO's fields: read, or a form while being changed. */
+.mm-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; margin: 12px 0 0; }
+.mm-fields dt { font-size: 12px; color: var(--ink-muted); }
+.mm-fields dd { margin: 0; }
 .mm-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 10px 14px;
-  margin-bottom: 12px;
+  margin: 12px 0;
 }
 .mm-in,
 .mm-save input,
+.mm-reason-wide input,
 .mm-apply input[type="date"],
 .mm-apply input:not([type]) {
   height: 30px;
@@ -28,10 +79,11 @@ tr.is-picked td { background: #eef4fc; }
   font: inherit;
   min-width: 0;
 }
-.mm-in:focus-visible, .mm-save input:focus-visible, .mm-apply input:focus-visible {
+.mm-in:focus-visible, .mm-save input:focus-visible, .mm-apply input:focus-visible, .mm-reason-wide input:focus-visible {
   outline: 2px solid var(--series-1); outline-offset: -1px;
 }
-.mm-value { min-height: 30px; display: flex; align-items: center; color: var(--ink); }
+.mm-history summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.mm-history .table-wrap { margin: 10px 0 0; }
 
 .mm-save, .mm-apply {
   display: flex;
@@ -43,9 +95,6 @@ tr.is-picked td { background: #eef4fc; }
 .mm-reason { flex: 1 1 240px; }
 .mm-reason input { width: 100%; }
 .mm-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); height: 30px; }
-.mm-danger { color: var(--critical); }
-.mm-h { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
-#mmDetail .table-wrap { margin: 0; max-height: 300px; border: 1px solid var(--line-soft); border-radius: var(--radius); }
 
 /* Registry rows: an inactive loom is greyed; a row being changed is a form. */
 .rg-off td { color: var(--ink-muted); }
@@ -58,6 +107,8 @@ tr.is-picked td { background: #eef4fc; }
 .rc-bad { color: var(--critical); font-weight: 600; }
 
 @media (max-width: 640px) {
-  .mm-grid { grid-template-columns: 1fr 1fr; }
+  .mm-grid, .mm-fields { grid-template-columns: 1fr 1fr; }
   .mm-actions .btn { flex: 1 1 45%; }
+  .mm-hide-sm { display: none; }
+  .mm-status { padding: 12px; }
 }

@@ -25,6 +25,7 @@ import { router as efisiensiRoutes } from './routes/efisiensi.js';
 import { router as shiftInputRoutes } from './routes/shift-input.js';
 import { router as masterRoutes } from './routes/master.js';
 import { router as registryRoutes } from './routes/registry.js';
+import { router as kelengkapanRoutes } from './routes/kelengkapan.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -80,6 +81,7 @@ app.use(efisiensiRoutes);
 app.use(shiftInputRoutes);
 app.use(masterRoutes);
 app.use(registryRoutes);
+app.use(kelengkapanRoutes);
 
 // The factory's own loom monitoring data, on its own router and its own
 // database. Mounted here only so both are served from one port.

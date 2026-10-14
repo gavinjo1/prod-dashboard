@@ -1,0 +1,41 @@
+/* ------------------------------------------------------------------ *
+ * Kelengkapan data: the month per family, the gaps in words, and the
+ * day-by-day grid
+ * ------------------------------------------------------------------ */
+
+.kl-month select { min-width: 160px; }
+.kl-prev {
+  margin: 0 0 12px; padding: 10px 12px; border-radius: 8px;
+  background: #fff8e8; border: 1px solid #f2d48a; font-size: 13px;
+}
+.kl-sum td { vertical-align: top; }
+.kl-t-part { color: #9a5b00; }
+.kl-t-miss { color: var(--critical); }
+.kl-h { margin: 18px 0 8px; font-size: 14px; font-weight: 600; }
+
+/* One gap per line: what is missing, then what to do about it. */
+.kl-gaps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.kl-gap {
+  display: grid; gap: 2px; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--line-soft); border-left-width: 4px; font-size: 13.5px;
+}
+.kl-how { color: var(--ink-muted); font-size: 12.5px; }
+.kl-gap-miss { border-left-color: var(--critical); }
+.kl-gap-part { border-left-color: var(--warning); }
+.kl-gap-na { border-left-color: var(--axis); }
+.kl-gap-ok { border-left-color: var(--good); }
+
+/* The grid: a cell says ✓, a count, or —. */
+.kl-wrap { max-height: 70vh; }
+.kl-table th, .kl-table td { white-space: nowrap; text-align: center; }
+.kl-table td:first-child, .kl-table th:first-child { text-align: left; }
+.kl-table .kl-fam { border-bottom: 1px solid var(--line-soft); }
+.kl-table .kl-first { border-left: 1px solid var(--line-soft); }
+.kl-ok { color: var(--good-text); }
+.kl-part { background: #fff3d6; color: #8a5300; }
+.kl-miss { background: #fdf2f2; color: var(--critical); }
+.kl-na { background: var(--surface-sub); }
+.kl-today td:first-child { font-weight: 600; }
+
+/* On a narrow screen the grid scrolls sideways; the date stays in view. */
+.kl-table td:first-child, .kl-table th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }

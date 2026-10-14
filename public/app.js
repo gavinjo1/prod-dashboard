@@ -25,6 +25,7 @@ import './js/features/efisiensi.js';
 import './js/features/shift-input.js';
 import './js/features/mesin.js';
 import './js/features/master.js';
+import './js/features/kelengkapan.js';
 import './js/features/search.js';
 import './js/features/filters.js';
 import './js/features/shell.js';

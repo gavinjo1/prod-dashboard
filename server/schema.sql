@@ -585,6 +585,30 @@ CREATE TABLE IF NOT EXISTS product_master_log (
   changed_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS product_master_log_mo ON product_master_log (mo, changed_at);
+-- 'accept' and 'unaccept' came with product_master_accept below; a table made
+-- before them has the old list.
+ALTER TABLE product_master_log DROP CONSTRAINT IF EXISTS product_master_log_action_check;
+ALTER TABLE product_master_log ADD CONSTRAINT product_master_log_action_check
+  CHECK (action IN ('create', 'update', 'delete', 'apply', 'accept', 'unaccept'));
+
+-- Production someone has looked at and said is meant to differ from its MO's
+-- master: a maklon order kept under its own fabric name, say. One line per
+-- fabric and pick the rows carry, against the master as it was then. Rows
+-- with that fabric and pick stop being reported, including ones saved later;
+-- a change to the master's fabric or pick brings them back.
+CREATE TABLE IF NOT EXISTS product_master_accept (
+  mo          text        NOT NULL,
+  family      text        NOT NULL,
+  kode        text        NOT NULL,   -- kode_key of the rows' fabric, '' for none
+  pick        numeric     NOT NULL,   -- the rows' pick_used, 0 for none
+  kode_kain   text,                   -- the fabric as the rows spell it, to show
+  master_kode text,                   -- kode_key of the master's fabric then
+  master_pick numeric,                -- the master's pick then
+  reason      text        NOT NULL,
+  accepted_by text,
+  accepted_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (mo, family, kode, pick)
+);
 
 -- A fabric code as the sheets mean it, whatever the spacing: "TWLST - 2",
 -- "TWLST-2" and "twlst 2" are one fabric.

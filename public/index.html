@@ -30,6 +30,7 @@
     <button class="tab" data-tab="mesin" data-family="ajl rapier shuttle" role="tab">Data Mesin</button>
     <button class="tab" data-tab="master" data-family="semua ajl rapier shuttle" role="tab">Master MO</button>
     <button class="tab" data-tab="import" data-family="semua ajl rapier shuttle" role="tab">Import</button>
+    <button class="tab" data-tab="kelengkapan" data-family="semua ajl rapier shuttle" role="tab">Kelengkapan Data</button>
     <button class="tab" data-tab="pabrik" data-family="ajl" role="tab">Pabrik</button>
     <button class="tab" data-tab="users" role="tab" id="tabUsers" hidden>Pengguna</button>
   </nav>
@@ -643,7 +644,7 @@
 
 <!-- PPIC's master: one MO, one fabric, one pick. -->
 <div class="panel" id="panel-master">
-  <section class="card">
+  <section class="card" id="mmListCard">
     <div class="card-head-row">
       <div class="card-head">
         <h2>Master MO</h2>
@@ -657,10 +658,34 @@
       <input type="file" id="mmFile" accept=".xlsx,.xlsm,.xls,.xlsb" hidden>
     </div>
     <div id="mmImport"></div>
-    <div id="mmMismatch"></div>
+    <div class="mm-filters" id="mmFilters"></div>
     <div class="table-wrap"><table class="data mm-table" id="mmTable"><thead></thead><tbody></tbody></table></div>
   </section>
-  <section class="card" id="mmDetail" hidden></section>
+  <!-- One MO, shown in place of the list. -->
+  <div id="mmDetail" hidden></div>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Which sources are there, day by day: what every other tab leaves out silently. -->
+<div class="panel" id="panel-kelengkapan">
+  <section class="card">
+    <div class="card-head-row">
+      <div class="card-head">
+        <h2>Kelengkapan data</h2>
+        <p class="card-sub">Apa saja yang sudah masuk per hari. Angka di tab lain hanya sebaik data yang ada di sini.</p>
+      </div>
+      <label class="field kl-month"><span>Bulan</span><select id="klMonth"></select></label>
+    </div>
+    <div id="klPrev"></div>
+    <div id="klSummary"></div>
+    <h3 class="kl-h">Yang kurang</h3>
+    <ul class="kl-gaps" id="klGaps"></ul>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Per hari</h2>
+      <p class="card-sub" id="klLegend"></p></div>
+    <div class="table-wrap kl-wrap"><table class="data kl-table" id="klTable"><thead></thead><tbody></tbody></table></div>
+  </section>
 </div>
 
 <!-- ------------------------------------------------------------------ -->

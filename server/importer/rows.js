@@ -2,6 +2,7 @@
  * Turning recognised sheets into rows, and writing them.
  */
 import { toDate, toNum, toText } from './values.js';
+import { AppError } from '../errors.js';
 
 /* ------------------------------------------------------------------ *
  * Import
@@ -24,6 +25,13 @@ export const GRADE_COLS = ['family', 'tgl', 'mo', 'kode_kain', 'grade_a', 'grade
 export const GRADE_NUM = new Set(['grade_a', 'grade_b', 'bs', 'rk', 'total']);
 
 /**
+ * The shuttle shift, as a letter. The October 2026 workbook names it by its
+ * hours where earlier ones wrote A / B / C; the loom counters run A → B → C →
+ * the next day's PAGI → SIANG → MALAM, so PAGI is A, SIANG B and MALAM C.
+ */
+const SHUTTLE_SHIFT = { A: 'A', B: 'B', C: 'C', PAGI: 'A', SIANG: 'B', MALAM: 'C' };
+
+/**
  * The shuttle DATA sheet as production rows. METER is the output; KETIK and
  * SODOKAN are kept beside it, and the loom width and line become its type and
  * group. `pick` rides along for the order list and is not a production column.
@@ -32,17 +40,29 @@ function buildShuttleRows({ headerRow, map, rows }) {
   const out = [];
   let skipped = 0;
   const at = (raw, f) => (map[f] === undefined ? null : raw[map[f]]);
+  // Without the shift, a day's three shifts per loom look like one row three
+  // times and two of them are dropped as duplicates — silently. Refused instead.
+  if (map.shift === undefined) {
+    throw new AppError('Kolom shift tidak ditemukan di sheet laporan Shuttle (dicari: SHIFT, SHIFT MASUK, REGU). ' +
+      'Periksa judul kolomnya.');
+  }
   for (let i = headerRow + 1; i < rows.length; i++) {
     const raw = rows[i];
     if (!raw || raw.every((c) => c === null || c === '')) continue;
     const tgl = toDate(at(raw, 'tgl'));
     const no_mc = toText(at(raw, 'no_mc'));
     if (!tgl || !no_mc) { skipped++; continue; }
+    const shiftRaw = toText(at(raw, 'shift'));
+    const shift = SHUTTLE_SHIFT[String(shiftRaw ?? '').trim().toUpperCase()];
+    if (!shift) {
+      throw new AppError(`Shift "${shiftRaw ?? ''}" di baris ${i + 1} (mesin ${no_mc}) tidak terbaca. ` +
+        'Yang dikenal: A, B, C, PAGI, SIANG, MALAM.');
+    }
     const width = toNum(at(raw, 'width'));
     const line = toText(at(raw, 'line'));
     out.push({
       tgl, no_mc,
-      shift: toText(at(raw, 'shift')) || '-',
+      shift,
       mo: toText(at(raw, 'mo')),
       kode_kain: toText(at(raw, 'kode_kain')),
       type_mc: width ? `SHUTTLE ${width}` : null,

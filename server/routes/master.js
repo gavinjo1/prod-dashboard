@@ -19,9 +19,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
  *
  * One MO is one fabric and one pick. Changing an MO here never changes
  * production already saved: each production row keeps the pick it was worked
- * out with (production.pick_used). What a change would affect is shown, and
- * applying it to old rows is a separate step (POST /api/master/mo/apply),
- * logged row by row in edit_log and as a whole in product_master_log.
+ * out with (production.pick_used). Rows that no longer match are shown, and
+ * someone decides: bring them in line (POST /api/master/mo/apply, logged row
+ * by row in edit_log), or say they are meant to differ (POST
+ * /api/master/mo/accept). Both are logged in product_master_log.
  * ------------------------------------------------------------------ */
 
 const MO = /^MO\/[A-Z0-9]+\/[A-Z0-9-]+$/;
@@ -62,26 +63,57 @@ function sameValue(f, a, b) {
 /** The fields `after` sets to something other than `before` has. */
 const differs = (before, after) => MASTER_FIELDS.filter((f) => f in after && !sameValue(f, after[f], before?.[f]));
 
+/* ------------------------------------------------------------------ *
+ * Production against the master, as SQL on a production row p joined to its
+ * master m.
+ *
+ * DIFFERS: the row was worked out with another pick, or filed under another
+ * fabric. A field the master leaves empty is not known, so nothing differs
+ * from it; fabric codes are compared ignoring spaces and punctuation.
+ * ACCEPTED: someone has said this fabric and pick are meant to differ, against
+ * the master as it still is (product_master_accept).
+ * OPEN: differs and nobody has said so: what the page asks someone to check.
+ * ------------------------------------------------------------------ */
+
+const DIFFERS = `((m.pick IS NOT NULL AND p.pick_used IS DISTINCT FROM m.pick)
+  OR (m.kode_kain IS NOT NULL AND kode_key(p.kode_kain) IS DISTINCT FROM kode_key(m.kode_kain)))`;
+const ACCEPTED = `EXISTS (SELECT 1 FROM product_master_accept a
+  WHERE a.mo = p.mo AND a.family = p.family
+    AND a.kode = coalesce(kode_key(p.kode_kain), '') AND a.pick = coalesce(p.pick_used, 0)
+    AND a.master_kode IS NOT DISTINCT FROM kode_key(m.kode_kain) AND a.master_pick IS NOT DISTINCT FROM m.pick)`;
+const OPEN = `(${DIFFERS} AND NOT ${ACCEPTED})`;
+
+/** How many of an MO's production rows are still to be checked against its master. */
+async function openRows(db, mo) {
+  const { rows: [r] } = await db.query(`
+    SELECT count(*)::int AS rows FROM production p JOIN product_master m ON m.mo = p.mo
+    WHERE p.mo = $1 AND ${OPEN}`, [mo]);
+  return r.rows;
+}
+
 /**
- * Production that does not match the master for an MO: rows worked out with
- * another pick, or filed under another fabric. Per family and pick, with the
- * dates it spans. A field the master leaves empty is not known, so nothing
- * differs from it; fabric codes are compared ignoring spaces and punctuation.
+ * The rows of an MO that differ from its master, as runs of consecutive days
+ * on one loom with one fabric and pick — "E4, KM 63-MAKLOON, 8–22 Sep" —
+ * with where they came from, and whether that fabric and pick were accepted.
  */
-async function affected(db, mo, from = null, to = null) {
-  const params = [mo];
-  const range = [];
-  if (from) { params.push(from); range.push(`p.tgl >= $${params.length}`); }
-  if (to) { params.push(to); range.push(`p.tgl <= $${params.length}`); }
+async function differingRuns(db, mo) {
   const { rows } = await db.query(`
-    SELECT p.family, p.pick_used AS pick, p.kode_kain, count(*)::int AS rows,
-           min(p.tgl)::text AS first, max(p.tgl)::text AS last,
-           count(*) FILTER (WHERE p.family = 'rapier' AND p.type_mc ILIKE '%SULZER%')::int AS sulzer
-    FROM production p JOIN product_master m ON m.mo = p.mo
-    WHERE p.mo = $1 ${range.map((r) => `AND ${r}`).join(' ')}
-      AND ((m.pick IS NOT NULL AND p.pick_used IS DISTINCT FROM m.pick) OR (m.kode_kain IS NOT NULL AND kode_key(p.kode_kain) IS DISTINCT FROM kode_key(m.kode_kain)))
-    GROUP BY 1, 2, 3 ORDER BY 1, 2`, params);
-  return { rows: rows.reduce((t, r) => t + r.rows, 0), groups: rows };
+    WITH d AS (
+      SELECT p.family, p.no_mc, p.tgl, p.kode_kain, p.pick_used, p.type_mc, p.source_file,
+             coalesce(kode_key(p.kode_kain), '') AS kode, ${ACCEPTED} AS accepted
+      FROM production p JOIN product_master m ON m.mo = p.mo
+      WHERE p.mo = $1 AND ${DIFFERS}),
+    r AS (
+      SELECT d.*, tgl - (dense_rank() OVER (PARTITION BY family, no_mc, kode, pick_used ORDER BY tgl))::int AS run
+      FROM d)
+    SELECT family, no_mc, min(kode_kain) AS kode_kain, kode, pick_used AS pick, accepted,
+           min(tgl)::text AS first, max(tgl)::text AS last, count(*)::int AS shifts,
+           count(*) FILTER (WHERE family = 'rapier' AND type_mc ILIKE '%SULZER%')::int AS sulzer,
+           array_agg(DISTINCT CASE WHEN source_file = 'manual entry' THEN 'diketik di dashboard'
+                                   ELSE coalesce(source_file, '—') END) AS sources
+    FROM r GROUP BY family, no_mc, kode, pick_used, accepted, run
+    ORDER BY family, no_mc, first`, [mo]);
+  return rows;
 }
 
 /* ---- reading ---- */
@@ -92,23 +124,20 @@ router.get('/api/master/mo', requireRole('viewer'), (req, res) => send(res, asyn
   let where = '';
   if (q) {
     params.push(`%${q}%`);
-    where = `WHERE mo ILIKE $1 OR kode_kain ILIKE $1 OR customer ILIKE $1 OR so ILIKE $1`;
+    where = `WHERE m.mo ILIKE $1 OR m.kode_kain ILIKE $1 OR m.customer ILIKE $1 OR m.so ILIKE $1`;
   }
-  const { rows } = await query(`SELECT ${COLS} FROM product_master ${where} ORDER BY mo DESC LIMIT 1000`, params);
-  res.json(rows);
-}));
-
-/** Every MO whose saved production no longer matches the master, for PPIC to look at. */
-router.get('/api/master/mo/mismatch', requireRole('viewer'), (req, res) => send(res, async () => {
+  // With where each MO has been woven and how much of that is still to check.
   const { rows } = await query(`
-    SELECT p.mo, m.kode_kain, m.pick, count(*)::int AS rows,
-           array_agg(DISTINCT p.pick_used) FILTER (WHERE p.pick_used IS NOT NULL) AS picks_used,
-           array_agg(DISTINCT p.kode_kain) FILTER (WHERE p.kode_kain IS NOT NULL) AS kodes_used,
-           min(p.tgl)::text AS first, max(p.tgl)::text AS last
-    FROM production p JOIN product_master m ON m.mo = p.mo
-    WHERE (m.pick IS NOT NULL AND p.pick_used IS DISTINCT FROM m.pick)
-       OR (m.kode_kain IS NOT NULL AND kode_key(p.kode_kain) IS DISTINCT FROM kode_key(m.kode_kain))
-    GROUP BY 1, 2, 3 ORDER BY 1`);
+    SELECT ${COLS}, u.shifts, u.machines, u.families, u.last_used, u.open, u.accepted
+    FROM product_master m
+    CROSS JOIN LATERAL (
+      SELECT count(*)::int AS shifts, count(DISTINCT p.family || ' ' || p.no_mc)::int AS machines,
+             coalesce(array_agg(DISTINCT p.family) FILTER (WHERE p.family IS NOT NULL), '{}') AS families,
+             max(p.tgl)::text AS last_used,
+             count(*) FILTER (WHERE ${OPEN})::int AS open,
+             count(*) FILTER (WHERE ${DIFFERS} AND ${ACCEPTED})::int AS accepted
+      FROM production p WHERE p.mo = m.mo) u
+    ${where} ORDER BY m.mo DESC LIMIT 1000`, params);
   res.json(rows);
 }));
 
@@ -119,19 +148,22 @@ router.get('/api/master/mo/item', requireRole('viewer'), (req, res) => send(res,
     query(`SELECT id, action, before_json AS before, after_json AS after, reason, affected, changed_by,
                   to_char(changed_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI') AS changed_at
            FROM product_master_log l WHERE mo = $1 ORDER BY l.changed_at DESC, l.id DESC LIMIT 50`, [mo]),
-    // Where the MO has been woven, and with which pick.
-    query(`SELECT family, pick_used AS pick, count(*)::int AS rows, count(DISTINCT no_mc)::int AS machines,
+    // Where the MO has been woven.
+    query(`SELECT family, count(*)::int AS rows, count(DISTINCT no_mc)::int AS machines,
                   min(tgl)::text AS first, max(tgl)::text AS last
-           FROM production WHERE mo = $1 GROUP BY 1, 2 ORDER BY 1, 2`, [mo])
+           FROM production WHERE mo = $1 GROUP BY 1 ORDER BY 1`, [mo])
   ]);
   if (!row && !usage.length) throw new AppError(`${mo} tidak ada di master maupun di data produksi.`, 404);
-  res.json({ mo, master: row ?? null, log, usage, mismatch: row ? await affected(pool, mo) : null });
-}));
-
-router.get('/api/master/mo/affected', requireRole('operator'), (req, res) => send(res, async () => {
-  const mo = normMo(req.query.mo);
-  const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? v : null);
-  res.json(await affected(pool, mo, iso(req.query.from), iso(req.query.to)));
+  const [runs, { rows: accepts }] = row ? await Promise.all([
+    differingRuns(pool, mo),
+    query(`SELECT a.family, a.kode, a.kode_kain, a.pick, a.reason, a.accepted_by,
+                  to_char(a.accepted_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI') AS accepted_at
+           FROM product_master_accept a JOIN product_master m ON m.mo = a.mo
+           WHERE a.mo = $1 AND a.master_kode IS NOT DISTINCT FROM kode_key(m.kode_kain)
+             AND a.master_pick IS NOT DISTINCT FROM m.pick
+           ORDER BY a.accepted_at`, [mo])
+  ]) : [[], { rows: [] }];
+  res.json({ mo, master: row ?? null, log, usage, runs, accepts });
 }));
 
 /* ---- changing one MO ---- */
@@ -150,7 +182,7 @@ router.put('/api/master/mo/item', requireRole('admin'), (req, res) => send(res, 
     const changed = differs(before, fields);
     if (before && !changed.length) {
       await client.query('ROLLBACK');
-      return res.json({ mo, changed: [], affected: await affected(pool, mo) });
+      return res.json({ mo, changed: [], open: await openRows(pool, mo) });
     }
     const cols = Object.keys(fields);
     const { rows: [after] } = before
@@ -162,15 +194,15 @@ router.put('/api/master/mo/item', requireRole('admin'), (req, res) => send(res, 
           INSERT INTO product_master (mo, ${cols.join(', ')}, source, updated_by)
           VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}, 'manual', $${cols.length + 2})
           RETURNING *`, [mo, ...cols.map((c) => fields[c]), req.user]);
-    const impact = await affected(client, mo);
+    const open = await openRows(client, mo);
     await client.query(`
       INSERT INTO product_master_log (mo, action, before_json, after_json, reason, affected, changed_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [mo, before ? 'update' : 'create', before ? JSON.stringify(before) : null, JSON.stringify(after),
-      reason, impact.rows, req.user]);
+      reason, open, req.user]);
     await client.query('COMMIT');
     // Saved production is left as it was; what no longer matches is reported.
-    res.json({ mo, changed: before ? changed : ['(baru)'], affected: impact });
+    res.json({ mo, changed: before ? changed : ['(baru)'], open });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -242,7 +274,7 @@ router.post('/api/master/mo/import', requireRole('admin'), upload.single('file')
     const { rows: mism } = await client.query(`
       SELECT p.mo, count(*)::int AS rows, min(p.tgl)::text AS first, max(p.tgl)::text AS last
       FROM production p JOIN product_master m ON m.mo = p.mo
-      WHERE p.mo = ANY($1) AND ((m.pick IS NOT NULL AND p.pick_used IS DISTINCT FROM m.pick) OR (m.kode_kain IS NOT NULL AND kode_key(p.kode_kain) IS DISTINCT FROM kode_key(m.kode_kain)))
+      WHERE p.mo = ANY($1) AND ${OPEN}
       GROUP BY 1 ORDER BY 1`, [touched]);
     await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
     res.json({
@@ -261,35 +293,45 @@ router.post('/api/master/mo/import', requireRole('admin'), upload.single('file')
 
 /* ---- correcting old production to the master ---- */
 
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The runs picked on the page — loom and dates — checked, as JSON for the query. */
+function readRuns(raw) {
+  const runs = (Array.isArray(raw) ? raw : []).map((r) => ({
+    family: String(r?.family ?? ''), no_mc: String(r?.no_mc ?? ''), from: String(r?.from ?? ''), to: String(r?.to ?? '')
+  }));
+  if (!runs.length) throw new AppError('Pilih dulu mesin dan tanggal yang mau diubah.');
+  if (runs.length > 500 || runs.some((r) => !r.family || !r.no_mc || !ISO.test(r.from) || !ISO.test(r.to))) {
+    throw new AppError('Pilihan mesin dan tanggal tidak terbaca. Muat ulang halaman lalu coba lagi.');
+  }
+  return runs;
+}
+const IN_RUNS = (n) => `EXISTS (SELECT 1 FROM jsonb_to_recordset($${n}::jsonb) AS r(family text, no_mc text, "from" date, "to" date)
+  WHERE r.family = p.family AND r.no_mc = p.no_mc AND p.tgl BETWEEN r."from" AND r."to")`;
+
 /**
- * Brings an MO's saved production in line with the master — its pick, and
- * its fabric — over the dates asked for. A Rapier SULZER's metres follow its
- * pick (1000 ÷ pick ÷ 39,37 × counter), so they are worked out again; every
- * other loom's metres do not depend on the pick and stay as typed. Each row
- * changed is logged with the reason.
+ * Brings the runs picked on the page in line with the master — pick and
+ * fabric. Only rows still to be checked change; one accepted as different is
+ * left. A Rapier SULZER's metres follow its pick (1000 ÷ pick ÷ 39,37 ×
+ * counter), so they are worked out again; every other loom's metres do not
+ * depend on the pick and stay as they are. Each row changed is logged with
+ * the reason.
  */
 router.post('/api/master/mo/apply', requireRole('admin'), (req, res) => send(res, async () => {
   const b = req.body ?? {};
   const mo = normMo(b.mo);
   const reason = String(b.reason ?? '').trim();
-  if (!reason) throw new AppError('Tulis alasan koreksi (contoh: pick salah ketik di master).');
-  const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? v : null);
-  const from = iso(b.from);
-  const to = iso(b.to);
+  if (!reason) throw new AppError('Tulis alasan (contoh: nama kain di laporan salah tulis).');
+  const runs = readRuns(b.runs);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rows: [m] } = await client.query(`SELECT * FROM product_master WHERE mo = $1`, [mo]);
     if (!m) throw new AppError(`${mo} tidak ada di master.`, 404);
-    const params = [mo];
-    const range = [];
-    if (from) { params.push(from); range.push(`tgl >= $${params.length}`); }
-    if (to) { params.push(to); range.push(`tgl <= $${params.length}`); }
     const { rows: targets } = await client.query(`
-      SELECT * FROM production WHERE mo = $1 ${range.map((r) => `AND ${r}`).join(' ')}
-        AND (($${params.length + 1}::numeric IS NOT NULL AND pick_used IS DISTINCT FROM $${params.length + 1}::numeric)
-          OR ($${params.length + 2}::text IS NOT NULL AND kode_key(kode_kain) IS DISTINCT FROM kode_key($${params.length + 2}::text)))
-      FOR UPDATE`, [...params, m.pick, m.kode_kain]);
+      SELECT p.* FROM production p JOIN product_master m ON m.mo = p.mo
+      WHERE p.mo = $1 AND ${OPEN} AND ${IN_RUNS(2)}
+      FOR UPDATE OF p`, [mo, JSON.stringify(runs)]);
     for (const before of targets) {
       // What the master leaves empty, the row keeps.
       const pick = m.pick ?? before.pick_used;
@@ -308,13 +350,88 @@ router.post('/api/master/mo/apply', requireRole('admin'), (req, res) => send(res
     await client.query(`
       INSERT INTO product_master_log (mo, action, after_json, reason, affected, changed_by)
       VALUES ($1, 'apply', $2, $3, $4, $5)`,
-    [mo, JSON.stringify({ pick: m.pick, kode_kain: m.kode_kain, from, to }), reason, targets.length, req.user]);
+    [mo, JSON.stringify({ pick: m.pick, kode_kain: m.kode_kain, runs }), reason, targets.length, req.user]);
     await client.query('COMMIT');
-    res.json({ mo, corrected: targets.length, from, to });
+    res.json({ mo, corrected: targets.length });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
   } finally {
     client.release();
   }
+}));
+
+/* ---- saying production is meant to differ ---- */
+
+/**
+ * The fabric and pick of the runs picked are meant to differ from the master
+ * (a maklon order under its own fabric name, say). Nothing in production
+ * changes; those rows, and later ones with the same fabric and pick, are no
+ * longer reported — until the master's fabric or pick changes.
+ */
+router.post('/api/master/mo/accept', requireRole('admin'), (req, res) => send(res, async () => {
+  const b = req.body ?? {};
+  const mo = normMo(b.mo);
+  const reason = String(b.reason ?? '').trim();
+  if (!reason) throw new AppError('Tulis alasan (contoh: order maklon, sengaja dibedakan).');
+  if (reason.length > 200) throw new AppError('Alasan terlalu panjang (maksimal 200 huruf).');
+  const runs = readRuns(b.runs);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [m] } = await client.query(`SELECT * FROM product_master WHERE mo = $1 FOR UPDATE`, [mo]);
+    if (!m) throw new AppError(`${mo} tidak ada di master.`, 404);
+    // Each fabric and pick among the rows picked, once.
+    const { rows: kinds } = await client.query(`
+      SELECT p.family, coalesce(kode_key(p.kode_kain), '') AS kode, coalesce(p.pick_used, 0) AS pick,
+             min(p.kode_kain) AS kode_kain
+      FROM production p JOIN product_master m ON m.mo = p.mo
+      WHERE p.mo = $1 AND ${OPEN} AND ${IN_RUNS(2)}
+      GROUP BY 1, 2, 3`, [mo, JSON.stringify(runs)]);
+    if (!kinds.length) throw new AppError('Tidak ada lagi yang perlu dicek di pilihan itu. Muat ulang halaman.');
+    for (const k of kinds) {
+      await client.query(`
+        INSERT INTO product_master_accept (mo, family, kode, pick, kode_kain, master_kode, master_pick, reason, accepted_by)
+        VALUES ($1, $2, $3, $4, $5, kode_key($6), $7, $8, $9)
+        ON CONFLICT (mo, family, kode, pick) DO UPDATE SET kode_kain = EXCLUDED.kode_kain,
+          master_kode = EXCLUDED.master_kode, master_pick = EXCLUDED.master_pick, reason = EXCLUDED.reason,
+          accepted_by = EXCLUDED.accepted_by, accepted_at = now()`,
+      [mo, k.family, k.kode, k.pick, k.kode_kain, m.kode_kain, m.pick, reason, req.user]);
+    }
+    // Counted over the whole MO: the mark reaches rows of the same fabric and pick left unticked.
+    const { rows: [{ rows }] } = await client.query(`
+      SELECT count(*)::int AS rows FROM production p JOIN product_master m ON m.mo = p.mo
+      WHERE p.mo = $1 AND ${DIFFERS} AND EXISTS (
+        SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS k(family text, kode text, pick numeric)
+        WHERE k.family = p.family AND k.kode = coalesce(kode_key(p.kode_kain), '') AND k.pick = coalesce(p.pick_used, 0))`,
+    [mo, JSON.stringify(kinds)]);
+    await client.query(`
+      INSERT INTO product_master_log (mo, action, after_json, reason, affected, changed_by)
+      VALUES ($1, 'accept', $2, $3, $4, $5)`,
+    [mo, JSON.stringify({ kinds: kinds.map(({ family, kode_kain, pick }) => ({ family, kode_kain, pick: Number(pick) || null })) }),
+      reason, rows, req.user]);
+    await client.query('COMMIT');
+    res.json({ mo, accepted: rows });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}));
+
+/** Takes back "meant to differ" for one fabric and pick: its rows are reported again. */
+router.post('/api/master/mo/unaccept', requireRole('admin'), (req, res) => send(res, async () => {
+  const b = req.body ?? {};
+  const mo = normMo(b.mo);
+  const { rows: [gone] } = await query(`
+    DELETE FROM product_master_accept WHERE mo = $1 AND family = $2 AND kode = $3 AND pick = $4 RETURNING *`,
+  [mo, String(b.family ?? ''), String(b.kode ?? ''), Number(b.pick) || 0]);
+  if (!gone) throw new AppError('Tanda itu sudah tidak ada. Muat ulang halaman.', 404);
+  await query(`
+    INSERT INTO product_master_log (mo, action, before_json, reason, changed_by)
+    VALUES ($1, 'unaccept', $2, $3, $4)`,
+  [mo, JSON.stringify({ family: gone.family, kode_kain: gone.kode_kain, pick: Number(gone.pick) || null }),
+    String(b.reason ?? '').trim() || null, req.user]);
+  res.json({ mo, ok: true });
 }));

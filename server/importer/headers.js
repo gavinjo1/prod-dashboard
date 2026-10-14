@@ -62,7 +62,9 @@ export const ORDER_FIELDS = {
  */
 export const SHUTTLE_FIELDS = {
   tgl:       ['TGL', 'TANGGAL', 'DATE'],
-  shift:     ['SHIFT', 'REGU'],
+  // "SHIFT MASUK" since the October 2026 workbook, which names the shift
+  // PAGI / SIANG / MALAM instead of A / B / C (see buildShuttleRows).
+  shift:     ['SHIFT', 'SHIFTMASUK', 'REGU'],
   no_mc:     ['NOMC', 'NOMESIN', 'NOMORMESIN'],
   mo:        ['MO', 'NOMO'],
   kode_kain: ['KODEKAIN', 'KODE'],
