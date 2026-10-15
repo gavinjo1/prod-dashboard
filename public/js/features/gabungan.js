@@ -126,6 +126,14 @@ export async function loadGabungan() {
       notes.push(`${fmt.int(g.no_pick)} m kain inspect tidak masuk Pick kain inspect: ` +
         'ordernya tidak punya PICK, dan kain yang sama tidak tercatat di order lain.');
     }
+    // Days a family's cloth was left out of the % because its 100% is missing.
+    const gaps = {};
+    for (const r of g.rows) for (const f of (r.no_cap ?? '').split(',').filter(Boolean)) (gaps[f] ??= []).push(r.tgl);
+    for (const [f, days] of Object.entries(gaps)) {
+      notes.push(`${FAMILY_LABEL[f] ?? f}: produksi 100% belum ada untuk ${days.length} hari (${fmt.day(days[0])}` +
+        `${days.length > 1 ? ` – ${fmt.day(days[days.length - 1])}` : ''}); A+B ${FAMILY_LABEL[f] ?? f} hari itu tidak ikut dihitung di %. ` +
+        'Upload ulang file bulan itu setelah bulan selesai.');
+    }
     notes.push(c.families.shuttle
       ? 'Kolom Shuttle kosong: belum ada laporan kualitas Shuttle. Hasil mesinnya ada di kartu Shuttle di bawah.'
       : 'Kolom Shuttle kosong sampai laporan harian Shuttle diimport.');

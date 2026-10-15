@@ -27,7 +27,8 @@ function runs(dates) {
 /** What one family has on one day, for the table and the sentences. */
 function stateOf(d, f, expected, today) {
   const x = d.fam[f];
-  const want = expected[f];
+  // Shifts expected that day: the looms active then, three shifts each.
+  const want = x.want ?? expected[f];
   return {
     shifts: x.shifts,
     want,
@@ -91,7 +92,7 @@ function paintSummary(d, families) {
   $('#klSummary').innerHTML = `<div class="table-wrap"><table class="data kl-sum"><thead><tr>
       <th>Jenis</th><th>Laporan harian (shift)</th><th>Kualitas</th><th>Produksi 100%</th><th>Ada di Master MO</th>
     </tr></thead><tbody>${families.map(row).join('')}</tbody></table></div>
-    <p class="note-line">Hari dihitung sampai kemarin. Lengkap = semua mesin aktif di Data Mesin × 3 shift.</p>`;
+    <p class="note-line">Hari dihitung sampai kemarin. Lengkap = semua mesin yang aktif di Data Mesin pada hari itu × 3 shift.</p>`;
 }
 
 /* ---- what is missing, said plainly ---- */

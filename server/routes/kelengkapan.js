@@ -31,13 +31,26 @@ const prevMonth = (m) => {
 /** Per family and day: shifts saved, quality lines, capacity, loom-monitor shifts. */
 async function monthReport(m, today) {
   const [lo, hi] = monthBounds(m);
-  const [{ rows: prod }, { rows: grade }, { rows: cap }, loom] = await Promise.all([
+  const [{ rows: prod }, { rows: grade }, { rows: cap }, { rows: active }, loom] = await Promise.all([
     query(`SELECT family, tgl::text AS tgl, count(*)::int AS shifts
            FROM production WHERE tgl >= $1 AND tgl < $2 GROUP BY 1, 2`, [lo, hi]),
     query(`SELECT family, tgl::text AS tgl, count(*)::int AS lines
            FROM grade WHERE tgl >= $1 AND tgl < $2 GROUP BY 1, 2`, [lo, hi]),
     query(`SELECT family, tgl::text AS tgl FROM daily_capacity
            WHERE tgl >= $1 AND tgl < $2 AND prod100 IS NOT NULL`, [lo, hi]),
+    // The looms active on each day: as the registry has them now, except
+    // where a later change in Data Mesin switched one on or off — then as it
+    // was before that change.
+    query(`
+      SELECT d.tgl::text AS tgl, m.family, count(*) FILTER (WHERE COALESCE(
+               (SELECT (l.before_json->>'active')::boolean FROM machine_log l
+                WHERE l.family = m.family AND l.no_mc = m.no_mc
+                  AND l.changed_at >= (d.tgl + 1)::timestamp AT TIME ZONE 'Asia/Jakarta'
+                  AND (l.before_json->>'active') IS DISTINCT FROM (l.after_json->>'active')
+                ORDER BY l.changed_at LIMIT 1),
+               m.active))::int AS active
+      FROM (SELECT generate_series($1::date, LEAST($2::date - 1, $3::date), interval '1 day')::date AS tgl) d
+      CROSS JOIN machine m GROUP BY 1, 2`, [lo, hi, today]),
     // A database of its own, and not on every install: without it, the column is left out.
     loomQuery(`SELECT tgl::text AS tgl, count(*)::int AS shifts FROM loom_shift
                WHERE tgl >= $1 AND tgl < $2 GROUP BY 1`, [lo, hi])
@@ -47,6 +60,7 @@ async function monthReport(m, today) {
   const shifts = new Map(prod.map((r) => [key(r.family, r.tgl), r.shifts]));
   const lines = new Map(grade.map((r) => [key(r.family, r.tgl), r.lines]));
   const capacity = new Set(cap.map((r) => key(r.family, r.tgl)));
+  const want = new Map(active.map((r) => [key(r.family, r.tgl), r.active * SHIFTS]));
   const monitor = loom && new Map(loom.map((r) => [r.tgl, r.shifts]));
 
   // Every day of the month up to today; nothing for days still to come.
@@ -58,6 +72,7 @@ async function monthReport(m, today) {
       tgl,
       fam: Object.fromEntries(FAMILIES.map((f) => [f, {
         shifts: shifts.get(key(f, tgl)) ?? 0,
+        want: want.get(key(f, tgl)) ?? 0,
         grade: lines.get(key(f, tgl)) ?? 0,
         capacity: capacity.has(key(f, tgl))
       }])),
@@ -111,7 +126,7 @@ router.get('/api/kelengkapan', requireRole('viewer'), (req, res) => send(res, as
     month: prevMonth(month),
     gaps: prevDays.reduce((t, d) => t + used.filter((f) => {
       const x = d.fam[f];
-      return (expected[f] && x.shifts < expected[f]) || (has[f]?.capacity && !x.capacity);
+      return (x.want && x.shifts < x.want) || (has[f]?.capacity && !x.capacity);
     }).length, 0)
   };
   res.json({

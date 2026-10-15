@@ -109,6 +109,12 @@ export function buildRows(found) {
   const out = [];
   const saldo = [];
   let skipped = 0;
+  // As on the Shuttle sheet: without the shift, a day's three shifts per loom
+  // collapse into one and two are dropped as duplicates, without a word.
+  if (dataset === 'production' && map.shift === undefined) {
+    throw new AppError('Kolom SHIFT tidak ditemukan (dicari: SHIFT, REGU, GILIRAN). Periksa judul kolomnya, ' +
+      'atau pastikan ini Laporan Harian: file EFFISIENSI tidak diimport di sini.');
+  }
 
   for (let i = headerRow + 1; i < rows.length; i++) {
     const raw = rows[i];
@@ -134,7 +140,15 @@ export function buildRows(found) {
 
     if (dataset === 'production') {
       if (!rec.no_mc) { skipped++; continue; }
-      rec.shift = rec.shift || '-';
+      // Only the letters. PAGI / SIANG / MALAM are not turned into letters
+      // here as on the Shuttle sheet: in the AJL and Rapier reports a letter
+      // may be a crew, whose hours change every Friday.
+      const shift = String(rec.shift ?? '').trim().toUpperCase();
+      if (!['A', 'B', 'C'].includes(shift)) {
+        throw new AppError(`Shift "${rec.shift ?? ''}" di baris ${i + 1} (mesin ${rec.no_mc}) tidak terbaca. ` +
+          'Laporan harian AJL dan Rapier harus memakai A, B atau C.');
+      }
+      rec.shift = shift;
     } else {
       if (!rec.mo) { skipped++; continue; }
       for (const c of GRADE_NUM) rec[c] = rec[c] ?? 0;
@@ -150,6 +164,26 @@ export function dedupe(records, keyOf) {
   const seen = new Map();
   for (const r of records) seen.set(keyOf(r), r);
   return [...seen.values()];
+}
+
+/**
+ * Keys a sheet repeats with different figures. dedupe keeps the last line,
+ * which is right for a corrected line and wrong for two shifts that lost
+ * what told them apart — so they are named in the import's result, not
+ * passed over as "duplicates".
+ */
+export function differingRepeats(records, keyOf, label) {
+  const first = new Map();
+  const differ = [];
+  for (const r of records) {
+    const k = keyOf(r);
+    const v = JSON.stringify(r);
+    if (!first.has(k)) first.set(k, v);
+    else if (first.get(k) !== v && !differ.some((d) => d.key === k)) differ.push({ key: k, label: label(r) });
+  }
+  if (!differ.length) return null;
+  return `${differ.length} baris muncul lebih dari sekali dengan angka berbeda; yang dipakai baris paling bawah: ` +
+    `${differ.slice(0, 5).map((d) => d.label).join(', ')}${differ.length > 5 ? ', …' : ''}. Periksa sheet-nya.`;
 }
 
 /* ------------------------------------------------------------------ *

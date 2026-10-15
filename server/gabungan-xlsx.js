@@ -59,7 +59,10 @@ export function gabSheet(g) {
     num(r, BS, d.bs_pjg);
     fx(r, BSP, `IFERROR(${ref(BS, r)}/(${ref(ACT, r)}+${ref(BS, r)}),"")`, pct(d.bs_pct), GZ.pct);
     num(r, ACT, d.actual_meter);
-    fx(r, ACTP, `IFERROR(${ref(ACT, r)}/${ref(PROD, r)},"")`, pct(d.actual_pct), GZ.pct);
+    // Where some cloth has no 100% beside it, ACT / PROD would count it against
+    // the other families' capacity: the dashboard's figure is written instead.
+    if (d.actual_pct_partial) num(r, ACTP, pct(d.actual_pct), GZ.pct);
+    else fx(r, ACTP, `IFERROR(${ref(ACT, r)}/${ref(PROD, r)},"")`, pct(d.actual_pct), GZ.pct);
     num(r, PROD, d.prod100);
     fx(r, PICK, `IFERROR(${ref(PMX, r)}/${ref(ACT, r)},"")`, d.pick_mesin, GZ.pick);
     num(r, PMS, d.pm_shuttle); num(r, PMR, d.pm_rapier); num(r, PMA, d.pm_ajl);
@@ -91,7 +94,8 @@ export function gabSheet(g) {
     fx(r1, BSP, `IFERROR(${ref(BS, r1)}/(${ref(ACT, r1)}+${ref(BS, r1)}),"")`, pct(t.bs_pct), GZ.pct);
     merge(r1, BSP, r2, BSP);
     total(ACT, t.actual_meter);
-    fx(r1, ACTP, `IFERROR(${ref(ACT, r1)}/${ref(PROD, r1)},"")`, pct(t.actual_pct), GZ.pct);
+    if (t.actual_pct_partial) num(r1, ACTP, pct(t.actual_pct), GZ.pct);
+    else fx(r1, ACTP, `IFERROR(${ref(ACT, r1)}/${ref(PROD, r1)},"")`, pct(t.actual_pct), GZ.pct);
     merge(r1, ACTP, r2, ACTP);
     total(PROD, t.prod100);
     // The total pick sits in the merged PICK MC cell, so it is read from there.

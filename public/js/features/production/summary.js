@@ -40,7 +40,8 @@ export async function loadSummary() {
     tile('Total output', fmt.int(s.produksi), 'm', `${s.days} hari · ${s.orders} order`),
     tile('Rata-rata per hari', fmt.int(perDay), 'm', delta),
     tile(`Output · ${onDay(last?.tgl)}`, fmt.int(last?.produksi), 'm',
-      last ? `hari terakhir${vsAvg}` : ''),
+      last ? `hari lengkap terakhir${vsAvg}${last.partial_tgl
+        ? `<br><span class="muted">${onDay(last.partial_tgl)}: baru ${fmt.int(last.partial_shifts)} dari ${fmt.int(last.full_shifts)} shift</span>` : ''}` : ''),
     tile(`Produktivitas · ${onDay(last?.tgl)}`, fmt.pct(last?.eff), '',
       last ? `periode ${fmt.pct(last.eff_period)}` : ''),
     gradeTile('Grade A', 'a', 'a_period'),

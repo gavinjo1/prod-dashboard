@@ -11,7 +11,7 @@ import { readOrderInfo, readShuttleOrders, upsertOrderInfo, upsertSaldo } from '
 import { FIELD_LABEL, diagnose } from './diagnose.js';
 import { readTypeLegend, upsertTypes } from './legend.js';
 import { readSodokanTable, upsertSodokan } from './sodokan.js';
-import { FAMILIES, buildRows, dedupe, planRows, recordConflicts, shuttleGaps, upsert } from './rows.js';
+import { FAMILIES, buildRows, dedupe, differingRepeats, planRows, recordConflicts, shuttleGaps, upsert } from './rows.js';
 export { isSupported } from './workbook.js';
 export { FAMILIES } from './rows.js';
 
@@ -78,11 +78,14 @@ export async function importBuffer(buffer, fileName,
       // Shuttle rows are production rows, in the same table.
       const table = found.dataset === 'shuttle' ? 'production' : found.dataset;
 
-      const { records, saldo, skipped } = buildRows(found);
+      // A sheet that cannot be read row by row stops the file, named.
+      let built;
+      try { built = buildRows(found); } catch (err) { fail(name, err); }
+      const { records, saldo, skipped } = built;
       // Stamped here rather than in buildRows: the sheet itself never says
       // which family it is, the person uploading it does.
       for (const r of records) r.family = family;
-      const warning = found.dataset === 'shuttle' ? shuttleGaps(records) : null;
+      let warning = found.dataset === 'shuttle' ? shuttleGaps(records) : null;
       if (found.dataset === 'shuttle') {
         for (const r of records) if (!shuttleLastDay || r.tgl > shuttleLastDay) shuttleLastDay = r.tgl;
       }
@@ -90,6 +93,9 @@ export async function importBuffer(buffer, fileName,
         ? (r) => `${family}|${r.tgl}|${r.shift}|${r.no_mc}`
         : (r) => `${family}|${r.tgl}|${r.mo}|${r.kode_kain}`;
       const unique = dedupe(records, keyOf);
+      const repeats = differingRepeats(records, keyOf, table === 'production'
+        ? (r) => `${r.no_mc} ${r.tgl} ${r.shift}` : (r) => `${r.mo} ${r.tgl}`);
+      if (repeats) warning = warning ? `${warning} ${repeats}` : repeats;
 
       try {
         // Only what is new or changed is written; a row typed on the

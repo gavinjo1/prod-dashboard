@@ -44,15 +44,25 @@ router.get('/api/summary', (req, res) => send(res, async () => {
   // output over what the looms could have woven, on the shifts that can be
   // priced.
   const { clauses, params: pParams } = buildFilters(req.query, { prefix: 'p.' });
+  // A day still being filled in is not "the last day": 1 shift of 189 read
+  // as a whole day's output. The last day is the latest one with nearly as
+  // many shifts as the fullest day in view; a later, partly filled day is
+  // reported beside it, not instead of it.
   const { rows: [last] } = await query(`
     WITH ${pricedShifts(clauses.length ? `WHERE ${clauses.join(' AND ')}` : '')},
-         d AS (SELECT max(tgl) AS tgl FROM r)
+         c AS (SELECT tgl, count(*) AS n FROM r GROUP BY tgl),
+         f AS (SELECT max(n) AS n FROM c),
+         d AS (SELECT max(c.tgl) AS tgl FROM c, f WHERE c.n >= f.n * 0.9),
+         p AS (SELECT c.tgl, c.n FROM c, d WHERE c.tgl > d.tgl ORDER BY c.tgl DESC LIMIT 1)
     SELECT d.tgl::text AS tgl,
            sum(r.produksi) FILTER (WHERE r.tgl = d.tgl) AS produksi,
            sum(r.produksi) FILTER (WHERE r.priced AND r.tgl = d.tgl) * 100
              / NULLIF(sum(r.capability) FILTER (WHERE r.priced AND r.tgl = d.tgl), 0) AS eff,
            sum(r.produksi) FILTER (WHERE r.priced) * 100
-             / NULLIF(sum(r.capability) FILTER (WHERE r.priced), 0) AS eff_period
+             / NULLIF(sum(r.capability) FILTER (WHERE r.priced), 0) AS eff_period,
+           (SELECT p.tgl::text FROM p) AS partial_tgl,
+           (SELECT p.n FROM p)::int AS partial_shifts,
+           (SELECT f.n FROM f)::int AS full_shifts
     FROM r, d GROUP BY d.tgl`, pParams);
 
   // Grades are dated by inspection, not weaving, so their last day is their
@@ -97,6 +107,7 @@ router.get('/api/trend', (req, res) => send(res, async () => {
     SELECT r.tgl::text AS date,
            sum(r.produksi)              AS produksi,
            count(DISTINCT r.no_mc)::int AS machines,
+           count(*)::int                AS shifts,
            ${showCapacity ? 'max(c.prod100)' : 'NULL::numeric'} AS prod100,
            sum(r.capability) FILTER (WHERE r.priced) AS at_target_rpm,
            COALESCE(sum(r.produksi) FILTER (WHERE NOT r.priced), 0) AS target_as_is,

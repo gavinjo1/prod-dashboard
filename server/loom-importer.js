@@ -15,10 +15,12 @@ import { loomPool } from './loom-db.js';
  * one slot every Friday. So the two systems can carry different letters for
  * the same eight hours, and joining them on the letter alone is wrong.
  *
- * Anchored on the week beginning Friday 11 September 2026, verified against
- * the daily report for 16 and 17 September: matching on this rotation lines
- * the two sources up to 0.00 and 0.17 metres per machine-shift, where the
- * other two rotations are out by 18-26 metres.
+ * Anchored on the week beginning Friday 11 September 2026 (state 1), and
+ * each Friday the state steps back by one: 2 → 1 → 0 → 2. Checked against
+ * the AJL daily report one week either side: 14 September lines up to 0.02 m
+ * per machine-shift on state 1, 19 September to 0.17 m on state 0, where the
+ * other rotations are out by 35-45 m. (Stepping forward instead matched the
+ * first week only, and paired every later shift with the wrong one.)
  * ------------------------------------------------------------------ */
 
 const SLOT_TIME = { A: 'pagi', B: 'siang', C: 'malam' };
@@ -44,7 +46,7 @@ function weekFriday(iso) {
 
 export function rotationFor(iso) {
   const weeks = Math.round((weekFriday(iso) - ANCHOR_FRIDAY) / (7 * DAY));
-  return ROTATION[(((ANCHOR_STATE + weeks) % 3) + 3) % 3];
+  return ROTATION[(((ANCHOR_STATE - weeks) % 3) + 3) % 3];
 }
 
 /** The mill's crew letter for a loom time slot on a given date. */

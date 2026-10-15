@@ -49,5 +49,19 @@ await admin2.end();
 const loom = new pg.Client({ ...cfg, database: loomName });
 await loom.connect();
 await loom.query(fs.readFileSync(path.join(__dirname, '..', 'server', 'loom-schema.sql'), 'utf8'));
+
+// The crew letter is worked out from the date when a shift is imported. Rows
+// imported under an earlier, wrong reading of the rotation keep that letter
+// until worked out again here; rows already right are left alone.
+const { crewFor } = await import('../server/loom-importer.js');
+const { rows: shifts } = await loom.query(`SELECT tgl::text AS tgl, slot, loom, crew FROM loom_shift`);
+let recrewed = 0;
+for (const r of shifts) {
+  const crew = crewFor(r.tgl, r.slot);
+  if (crew === r.crew) continue;
+  await loom.query(`UPDATE loom_shift SET crew = $4 WHERE tgl = $1 AND slot = $2 AND loom = $3`, [r.tgl, r.slot, r.loom, crew]);
+  recrewed++;
+}
 await loom.end();
-console.log('loom schema applied');
+console.log(`loom schema applied${recrewed ? `; crew letter corrected on ${recrewed} shifts` : ''}`);
+process.exit(0);

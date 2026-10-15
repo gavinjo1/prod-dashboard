@@ -98,6 +98,20 @@ export function trendPeriods(days, period) {
 export const periodDays = (period, key) => (period === 'week' ? 7 : period === 'month' ? daysIn(key)
   : (Number(key) % 4 === 0 ? 366 : 365));
 
+/** The days between the first and the last with data, each one there: a day with none is marked missing. */
+function withMissingDays(rows) {
+  if (rows.length < 2) return rows;
+  const byDate = new Map(rows.map((d) => [d.date, d]));
+  const out = [];
+  const end = rows[rows.length - 1].date;
+  for (let t = new Date(`${rows[0].date}T00:00:00Z`); ; t.setUTCDate(t.getUTCDate() + 1)) {
+    const date = t.toISOString().slice(0, 10);
+    out.push(byDate.get(date) ?? { date, missing: true, produksi: null, target: null });
+    if (date >= end) break;
+  }
+  return out;
+}
+
 export async function paintTrend() {
   const period = state.trendPeriod;
   const byDay = period === 'day';
@@ -106,6 +120,12 @@ export async function paintTrend() {
   $$('#trendPeriod [data-tperiod]').forEach((b) => b.classList.toggle('is-active', b.dataset.tperiod === period));
 
   let rows = trendDays;
+  // By day, a day with only some of its shifts in is drawn hollow, and a day
+  // with none is a break in the line — joined straight across, it read as two
+  // ordinary days, and a day still being typed in read as a collapse.
+  const fullShifts = byDay ? Math.max(0, ...rows.map((d) => d.shifts || 0)) : 0;
+  const dayPartial = (d) => byDay && !d.missing && d.shifts < fullShifts * 0.9;
+  if (byDay) rows = withMissingDays(rows);
   if (!byDay) {
     const ticket = takeTicket('trendPeriod');
     const win = trendWindow(period);
@@ -119,17 +139,19 @@ export async function paintTrend() {
   const lo = state.from && P.key(state.from);
   const hi = state.to && P.key(state.to);
   const inFilter = (d) => !byDay && lo && d.date >= lo && d.date <= hi;
-  const partial = (d) => !byDay && d.days < periodDays(period, d.date);
+  const partial = (d) => (byDay ? dayPartial(d) : d.days < periodDays(period, d.date));
 
   // Under the two lines: how far off, and the efficiency — output against
   // capability at the RPM target. Shifts with no pick or RPM target have no
   // capability, so their output (target_as_is) is left out of both sides.
   const tipRows = (d) => {
+    if (d.missing) return [['Data', 'belum ada']];
     const gap = Number(d.produksi) - d.target;
     const cap = Number(d.at_target_rpm) || 0;
     return [
       ['Selisih', `${gap >= 0 ? '+' : '−'}${fmt.num(Math.abs(gap))} m`],
-      ['Efisiensi', cap ? fmt.pct((Number(d.produksi) - (Number(d.target_as_is) || 0)) / cap * 100) : '—']
+      ['Efisiensi', cap ? fmt.pct((Number(d.produksi) - (Number(d.target_as_is) || 0)) / cap * 100) : '—'],
+      ...(dayPartial(d) ? [['Shift terisi', `${fmt.int(d.shifts)} dari ${fmt.int(fullShifts)}`]] : [])
     ];
   };
 
@@ -137,24 +159,29 @@ export async function paintTrend() {
   // first, as the tooltip reads: what was asked, then what was woven.
   multiLineChart($('#chartTrend'), rows, [
     { name: 'Target', colour: 'var(--series-3)', value: (d) => d.target },
-    { name: 'Hasil mesin', colour: 'var(--series-1)', value: (d) => Number(d.produksi) }
+    { name: 'Hasil mesin', colour: 'var(--series-1)', value: (d) => (d.missing ? NaN : Number(d.produksi)) }
   ], {
     unit: ' m',
     label: (d) => (byDay ? fmt.day(d.date) : P.label(d.date, d)),
     title: (d) => (byDay ? fmt.day(d.date) : P.long(d.date, d)),
     highlight: inFilter,
     hollow: partial,
-    tipExtra: tipRows
+    tipExtra: tipRows,
+    keepEmpty: byDay
   });
 
-  const short = rows.filter((d) => Number(d.produksi) < d.target).length;
+  // Only whole days are measured against the target.
+  const counted = rows.filter((d) => !d.missing && !partial(d));
+  const short = counted.filter((d) => Number(d.produksi) < d.target).length;
+  const missing = rows.filter((d) => d.missing).length;
   const lead = byDay ? ''
     : period === 'year' ? `Semua tahun s.d. ${fmt.day(state.to || todayIso())} · `
     : `${TREND_BACK[period]} ${TREND_UNIT[period]} terakhir s.d. ${fmt.day(state.to || todayIso())}${
       rows.length < TREND_BACK[period] ? ` (data baru ada ${rows.length} ${TREND_UNIT[period]})` : ''} · `;
   $('#chartTrendNote').textContent = rows.length
-    ? `${lead}${fmt.int(short)} dari ${fmt.int(rows.length)} ${TREND_UNIT[period]} di bawah target` +
+    ? `${lead}${fmt.int(short)} dari ${fmt.int(counted.length)} ${TREND_UNIT[period]} di bawah target` +
       (rows.some(partial) ? ' · titik berlubang: belum penuh' : '') +
+      (missing ? ` · ${fmt.int(missing)} hari tanpa data: garis terputus` : '') +
       (rows.some(inFilter) ? ' · latar biru: periode filter' : '')
     : '';
 }

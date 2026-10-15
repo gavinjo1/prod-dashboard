@@ -38,10 +38,16 @@ function gabDerive(s) {
   const actual = Number(s.actual_meter) || 0;
   const bs = Number(s.bs_pjg) || 0;
   const ratio = (a, b) => (a !== null && b ? a / b : null);
+  // Against PRODUKSI 100%, only the cloth of families whose 100% is there: a
+  // family's A+B over the other families' capacity put Rapier's 23–30 Sep
+  // inspection on top of AJL's 100% and read 91% for a 79% day.
+  const priced = s.actual_priced === null || s.actual_priced === undefined ? actual : Number(s.actual_priced);
   return {
     ...s,
     bs_pct:          s.bs_pjg === null ? null : ratio(bs * 100, actual + bs),
-    actual_pct:      ratio(actual * 100, Number(s.prod100) || 0),
+    actual_pct:      ratio(priced * 100, Number(s.prod100) || 0),
+    // Set when some cloth was left out of the % for want of its 100%.
+    actual_pct_partial: priced !== actual,
     pick_mc_x_prod:  pmx,
     // Divided by the inspected metres, as the sheet does: 8.342.319,70 over
     // 159.496,25 is its 52,30 for 1 Sep.
@@ -52,7 +58,7 @@ function gabDerive(s) {
 }
 
 function gabPeriod(rows) {
-  const sum = Object.fromEntries(GAB.map((k) => [k, sumOf(rows, k)]));
+  const sum = Object.fromEntries([...GAB, 'actual_priced'].map((k) => [k, sumOf(rows, k)]));
   const days = rows.length;
   const per = (k) => (sum[k] === null ? null : sum[k] / days);
   return {
@@ -136,6 +142,9 @@ const GAB_SOURCES = {
         )
         SELECT tgl::text AS tgl,
                sum(bs) AS bs_pjg, sum(ab) AS actual_meter, sum(prod100) AS prod100,
+               -- The cloth that has its family's 100% beside it, and the families that do not.
+               sum(ab) FILTER (WHERE prod100 IS NOT NULL) AS actual_priced,
+               string_agg(family, ',' ORDER BY family) FILTER (WHERE ab > 0 AND prod100 IS NULL) AS no_cap,
                sum(pm) FILTER (WHERE family = 'shuttle') AS pm_shuttle,
                sum(pm) FILTER (WHERE family = 'rapier')  AS pm_rapier,
                sum(pm) FILTER (WHERE family = 'ajl')     AS pm_ajl,

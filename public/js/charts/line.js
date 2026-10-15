@@ -136,11 +136,13 @@ export function multiLineChart(host, data, series, {
   unit = '',
   tipExtra = () => [],
   highlight = () => false,   // points to set on a tinted band
-  hollow = () => false       // points drawn as rings: an incomplete period
+  hollow = () => false,      // points drawn as rings: an incomplete period
+  keepEmpty = false          // keep points with no value, as a break in the line
 } = {}) {
-  const pts = data.filter((d) => series.some((s) => Number.isFinite(s.value(d))));
+  const has = (d) => series.some((s) => Number.isFinite(s.value(d)));
+  const pts = keepEmpty ? data : data.filter(has);
   // One point is still worth showing — a month view of one month — as dots.
-  if (!pts.length) return empty(host);
+  if (!pts.some(has)) return empty(host);
 
   mount(host, (root, w) => {
     const measureAxis = measurer(`11px ${UI_FONT}`);
@@ -186,7 +188,8 @@ export function multiLineChart(host, data, series, {
     const dots = pts.length <= 45;
     for (const s of series) {
       const at = pts.map((p, i) => [i, s.value(p)]).filter(([, v]) => Number.isFinite(v));
-      const d = at.map(([i, v], k) => `${k ? 'L' : 'M'}${scaleX(i).toFixed(1)},${scaleY(v).toFixed(1)}`).join(' ');
+      // A point without a value breaks the line rather than being bridged.
+      const d = at.map(([i, v], k) => `${k && i === at[k - 1][0] + 1 ? 'L' : 'M'}${scaleX(i).toFixed(1)},${scaleY(v).toFixed(1)}`).join(' ');
       svg.append(el('path', { d, fill: 'none', stroke: s.colour, 'stroke-width': 2,
         'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
       if (dots) {
