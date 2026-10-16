@@ -4,7 +4,6 @@
 import { $, $$ } from '../core/dom.js';
 import { api, state } from '../core/state.js';
 import { buildPicker, byMachineNo } from '../ui/picker.js';
-import { fillLists } from './entry.js';
 import { fmt } from '../charts/core.js';
 import { refresh } from './shell.js';
 
@@ -37,7 +36,6 @@ export async function loadFilters() {
   buildPicker($('#pMachine'), 'machine', byMachineNo(f.machines), 'mesin');
   buildPicker($('#pFabric'), 'fabric', f.fabrics,  'kain');
   buildPicker($('#pMo'),     'mo',     f.mos,      'order');
-  fillLists(f);
 }
 
 /** On small screens the filters fold away; the button carries a summary. */

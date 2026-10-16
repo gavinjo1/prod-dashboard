@@ -1,101 +1,43 @@
 /**
- * Semua: the combined monthly report.
+ * Semua: every loom family's daily output side by side.
  */
-import { $, $$ } from '../core/dom.js';
+import { $ } from '../core/dom.js';
 import { FAMILY_LABEL } from './family.js';
 import { isCurrent, state, takeTicket, toLogin } from '../core/state.js';
-import { fmt } from '../charts/core.js';
-import { columnChart } from '../charts/bars.js';
+import { esc, fmt } from '../charts/core.js';
 import { daysIn } from '../core/dates.js';
 import { lineChart } from '../charts/line.js';
 import { tile } from '../ui/tiles.js';
 
 /* ------------------------------------------------------------------ *
- * Semua — the combined monthly report across every loom family
+ * Semua — the families' output together, month by month
  *
- * The server sends the measured figures and the ratios worked out from them;
- * this only lays them out the way the mill's GABUNGAN sheet does.
+ * The server sends each day's metres per family (the counter, as on each
+ * family's Produksi tab), PRODUKSI 100% and the efficiency; this lays them
+ * out a line per day, with the month's total and the month before.
  * ------------------------------------------------------------------ */
 
 export const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus',
   'September', 'Oktober', 'November', 'Desember'];
 export const monthName = (ym) => { const [y, m] = ym.split('-'); return `${BULAN[Number(m) - 1]} ${y}`; };
 
-// Two decimals throughout, as the sheet prints them: 52,30 and 2,82%.
+// Two decimals throughout, as the mill's sheets print them: 52,30 and 2,82%.
 export const f2 = (n) => (n === null || n === undefined || isNaN(n) ? '—'
   : Number(n).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 export const p2 = (n) => (n === null || n === undefined || isNaN(n) ? '—' : `${f2(n)}%`);
 
-// Dates as the sheet prints them — Excel's d-mmm, so 1-Sep, not 1 Sep.
+// Dates as the sheets print them — Excel's d-mmm, so 1-Sep, not 1 Sep.
 export const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const sheetDay = (iso) => `${Number(iso.slice(8, 10))}-${MON3[Number(iso.slice(5, 7)) - 1]}`;
 
-export const gc = (v, cls = '') => `<td class="num${cls ? ` ${cls}` : ''}">${v}</td>`;
-
-/** One day, in the sheet's seventeen columns. */
-export const gabDayRow = (r) => `<tr>
-  <td class="gab-date">${sheetDay(r.tgl)}</td>
-  ${gc(f2(r.bs_pjg))}${gc(p2(r.bs_pct))}
-  ${gc(f2(r.actual_meter), 'b')}${gc(p2(r.actual_pct))}
-  ${gc(f2(r.prod100), 'b')}${gc(f2(r.pick_mesin))}
-  ${gc(f2(r.pm_shuttle))}${gc(f2(r.pm_rapier))}${gc(f2(r.pm_ajl))}${gc(f2(r.pick_mesin))}${gc(f2(r.pick_mc_x_prod))}
-  ${gc(f2(r.pi_shuttle))}${gc(f2(r.pi_rapier))}${gc(f2(r.pi_ajl))}${gc(f2(r.pick_inspect_x_prod))}
-  ${gc(f2(r.pick_inspect), 'gab-green')}
-</tr>`;
-
-/**
- * The sheet's total block, two lines:
- *   days so far (red) | totals          | the two ratios and the pick span both lines
- *   days in month     | per-day average | RATA-RATA PICK GABUNGAN … | PICK GABUNGAN PICK KAIN INSPECT
- * The averages divide by the days reported, not the days in the month —
- * 136.827,13 over 24 is the sheet's 5.701,13.
- */
-export const gabBlock = (p, dim) => {
-  const t = p.total;
-  const a = p.avg || {};
-  return `<tr class="gab-tot">
-    <td class="gab-days">${p.days}</td>
-    ${gc(f2(t.bs_pjg), 'b')}
-    <td class="num b gab-mid" rowspan="2">${p2(t.bs_pct)}</td>
-    ${gc(f2(t.actual_meter), 'b')}
-    <td class="num b gab-mid" rowspan="2">${p2(t.actual_pct)}</td>
-    ${gc(f2(t.prod100), 'b')}
-    <td class="num b gab-mid" rowspan="2">${f2(t.pick_mesin)}</td>
-    ${gc(f2(t.pm_shuttle), 'b')}${gc(f2(t.pm_rapier), 'b')}${gc(f2(t.pm_ajl), 'b')}
-    <td class="num b" colspan="2">${f2(t.pick_mc_x_prod)}</td>
-    ${gc(f2(t.pi_shuttle), 'b gab-green')}${gc(f2(t.pi_rapier), 'b gab-green')}${gc(f2(t.pi_ajl), 'b gab-green')}
-    ${gc(f2(t.pick_inspect_x_prod), 'b gab-yellow')}
-    <td class="gab-blank"></td>
-  </tr>
-  <tr class="gab-tot">
-    <td class="gab-dim">${dim}</td>
-    ${gc(f2(a.bs_pjg), 'b')}
-    ${gc(f2(a.actual_meter), 'b')}
-    ${gc(f2(a.prod100), 'b')}
-    <td class="gab-label" colspan="3">RATA-RATA PICK GABUNGAN ( BERDASARKAN MESIN )</td>
-    <td class="num b gab-big" colspan="2">${f2(t.pick_mesin)}</td>
-    <td class="gab-label gab-green" colspan="3">PICK GABUNGAN PICK KAIN INSPECT</td>
-    ${gc(f2(t.pick_inspect), 'b gab-big gab-green')}
-    <td class="gab-blank"></td>
-  </tr>`;
-};
+const gc = (v, cls = '', title = '') => `<td class="num${cls ? ` ${cls}` : ''}"${title ? ` title="${esc(title)}"` : ''}>${v}</td>`;
 
 export async function loadGabungan() {
   const ticket = takeTicket('gabungan');
-  const q = {};
-  if (state.gabMonth) q.month = state.gabMonth;
-  if (state.gabSource) q.source = state.gabSource;
-  const res = await fetch(`/api/gabungan?${new URLSearchParams(q)}`);
+  const res = await fetch(`/api/gabungan?${new URLSearchParams(state.gabMonth ? { month: state.gabMonth } : {})}`);
   if (res.status === 401) return toLogin();
   const g = await res.json();
   if (!isCurrent('gabungan', ticket)) return;
-
-  // The switch shows even on an empty month, so the other source stays reachable.
-  state.gabSource = g.source;
-  $$('#gabSource .seg').forEach((b) => {
-    b.classList.toggle('is-active', b.dataset.src === g.source);
-    b.disabled = !g.sources?.[b.dataset.src];
-  });
 
   $('#gabEmpty').hidden = !!g.month;
   $('#gabBody').hidden = !g.month;
@@ -104,159 +46,97 @@ export async function loadGabungan() {
   state.gabMonth = g.month;
   $('#gabMonth').innerHTML = g.months
     .map((m) => `<option value="${m}"${m === g.month ? ' selected' : ''}>${monthName(m)}</option>`).join('');
-  // The file is built from the same report as this page, month and source included.
-  $('#gabExport') && ($('#gabExport').href =
-    `/api/gabungan.xlsx?${new URLSearchParams({ month: g.month, source: g.source })}`);
+  // The file is built from the same report as this page.
+  if ($('#gabExport')) $('#gabExport').href = `/api/gabungan.xlsx?${new URLSearchParams({ month: g.month })}`;
 
   const [gy, gm] = g.month.split('-');
-  $('#gabTitle').textContent =
-    `LAPORAN PRODUKSI GABUNGAN ${BULAN[Number(gm) - 1].toUpperCase()} TAHUN ${gy}`;
+  $('#gabTitle').textContent = `LAPORAN PRODUKSI GABUNGAN ${BULAN[Number(gm) - 1].toUpperCase()} TAHUN ${gy}`;
 
-  // Say what the automatic figures rest on, and what they cannot include.
-  const notes = [g.source === 'auto'
-    ? 'Disusun otomatis dari laporan harian yang sudah diimport.'
-    : 'Angka dari file LAPORAN PRODUKSI GABUNGAN yang diupload.'];
-  if (g.source === 'auto' && g.coverage) {
-    const c = g.coverage;
-    const fams = ['ajl', 'rapier', 'shuttle'].map((f) =>
-      `${FAMILY_LABEL[f]} ${c.families[f] ? `${c.families[f]} hari` : 'belum ada'}`).join(', ');
-    notes.push(`Laporan harian: ${fams}. Grade (BS, A+B): ${c.grade_days} hari. ` +
-      `Produksi 100%: ${c.capacity_days} hari.`);
-    if (g.no_pick > 0) {
-      notes.push(`${fmt.int(g.no_pick)} m kain inspect tidak masuk Pick kain inspect: ` +
-        'ordernya tidak punya PICK, dan kain yang sama tidak tercatat di order lain.');
-    }
-    // Days a family's cloth was left out of the % because its 100% is missing.
-    const gaps = {};
-    for (const r of g.rows) for (const f of (r.no_cap ?? '').split(',').filter(Boolean)) (gaps[f] ??= []).push(r.tgl);
-    for (const [f, days] of Object.entries(gaps)) {
-      notes.push(`${FAMILY_LABEL[f] ?? f}: produksi 100% belum ada untuk ${days.length} hari (${fmt.day(days[0])}` +
-        `${days.length > 1 ? ` – ${fmt.day(days[days.length - 1])}` : ''}); A+B ${FAMILY_LABEL[f] ?? f} hari itu tidak ikut dihitung di %. ` +
-        'Upload ulang file bulan itu setelah bulan selesai.');
-    }
-    notes.push(c.families.shuttle
-      ? 'Kolom Shuttle kosong: belum ada laporan kualitas Shuttle. Hasil mesinnya ada di kartu Shuttle di bawah.'
-      : 'Kolom Shuttle kosong sampai laporan harian Shuttle diimport.');
-  }
-  if (g.prev_skipped) {
-    notes.push(`Blok RATA² BULAN ${BULAN[Number(g.prev_skipped.slice(5)) - 1].toUpperCase()} belum ` +
-      'ditampilkan: laporan harian bulan itu belum diimport.');
-  }
-  $('#gabNote').textContent = notes.join(' ');
-
-  const t = g.total;
-  const prev = g.prev;
-  const vsPrev = (now, before, unit = '') => {
-    if (!prev || before === null || before === undefined || now === null) return '';
-    const d = now - before;
-    return `<span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${f2(Math.abs(d))}${unit}</span> vs ${BULAN[Number(prev.month.slice(5)) - 1]}`;
+  const fams = g.families;
+  const cols = 4 + fams.length;
+  // A family's day with clearly fewer shifts than its fullest day is still
+  // being filled in: marked, so its metres are not read as a bad day.
+  const full = Object.fromEntries(fams.map((f) => [f, Math.max(0, ...g.rows.map((d) => d.fam[f]?.shifts ?? 0))]));
+  const famCell = (d, f, bold = '') => {
+    const x = d.fam[f];
+    if (!x) return gc('—', 'gab-none');
+    const part = x.shifts !== undefined && x.shifts < full[f] * 0.9;
+    return gc(f2(x.meter), `${bold}${part ? ' gab-part' : ''}`,
+      `${FAMILY_LABEL[f]}: efisiensi ${p2(x.eff)}${part ? ` · baru ${x.shifts} dari ${full[f]} shift` : ''}`);
   };
-  $('#gabStats').innerHTML = [
-    // Whole metres in the tiles: the decimals are in the table, and at seven
-    // digits they no longer fit a tile on a phone.
-    tile('Actual hasil kain', fmt.int(t.actual_meter), 'm',
-      `rata-rata ${fmt.int(g.avg.actual_meter)} m/hari`),
-    tile('Efisiensi', p2(t.actual_pct), '',
-      vsPrev(t.actual_pct, prev?.total.actual_pct, ' poin') || `dari ${fmt.int(t.prod100)} m produksi 100%`),
-    tile('BS', fmt.int(t.bs_pjg), 'm', `${p2(t.bs_pct)} ${vsPrev(t.bs_pct, prev?.total.bs_pct, ' poin')}`),
-    tile('Pick gabungan (mesin)', f2(t.pick_mesin), '', vsPrev(t.pick_mesin, prev?.total.pick_mesin)),
-    tile('Pick kain inspect', f2(t.pick_inspect), '', vsPrev(t.pick_inspect, prev?.total.pick_inspect))
-  ].join('');
 
-  const left = g.days - g.days_in_month;
-  $('#gabTable tbody').innerHTML = g.rows.map(gabDayRow).join('');
+  $('#gabTable thead').innerHTML = `<tr><th>TGL</th>${fams.map((f) => `<th>${esc((FAMILY_LABEL[f] ?? f).toUpperCase())}<br>(m)</th>`).join('')}
+    <th>TOTAL<br>(m)</th><th>PRODUKSI<br>100% (m)</th><th>EFISIENSI</th></tr>`;
+  $('#gabTable tbody').innerHTML = g.rows.map((d) => `<tr>
+    <td class="gab-date">${sheetDay(d.tgl)}</td>
+    ${fams.map((f) => famCell(d, f)).join('')}
+    ${gc(f2(d.meter), 'b')}${gc(f2(d.prod100))}${gc(p2(d.eff), 'b')}
+  </tr>`).join('');
+
+  const block = (p, label) => `
+    <tr class="gab-tot"><td class="gab-label">${label}</td>
+      ${fams.map((f) => gc(f2(p.total.fam[f]?.meter), 'b', p.total.fam[f] ? `${FAMILY_LABEL[f]}: efisiensi ${p2(p.total.fam[f].eff)}` : '')).join('')}
+      ${gc(f2(p.total.meter), 'b')}${gc(f2(p.total.prod100), 'b')}${gc(p2(p.total.eff), 'b')}</tr>
+    <tr class="gab-tot"><td class="gab-label">RATA-RATA/HARI (${p.days} hari)</td>
+      ${fams.map((f) => gc(f2(p.avg.fam[f]?.meter))).join('')}
+      ${gc(f2(p.avg.meter))}${gc(f2(p.avg.prod100))}<td></td></tr>`;
+  const prev = g.prev;
   $('#gabTable tfoot').innerHTML = [
-    '<tr class="gab-gap"><td colspan="17"></td></tr>',
-    gabBlock(g, g.days_in_month),
-    `<tr class="gab-left"><td colspan="17">${left} &lt;sisa hari</td></tr>`,
+    `<tr class="gab-gap"><td colspan="${cols}"></td></tr>`,
+    block(g, 'TOTAL'),
+    `<tr class="gab-left"><td colspan="${cols}">${g.days} dari ${g.days_in_month} hari bulan ini ada data</td></tr>`,
     ...(prev ? [
-      `<tr class="gab-prev"><td colspan="17">RATA² BULAN ${BULAN[Number(prev.month.slice(5)) - 1].toUpperCase()}</td></tr>`,
-      gabBlock(prev, daysIn(prev.month))
+      `<tr class="gab-prev"><td colspan="${cols}">BULAN ${BULAN[Number(prev.month.slice(5)) - 1].toUpperCase()} (${daysIn(prev.month)} hari)</td></tr>`,
+      block(prev, 'TOTAL')
     ] : [])
   ].join('');
 
-  columnChart($('#gabChart'), g.rows, {
-    x: (d) => d.tgl,
-    y: (d) => Number(d.actual_meter),
-    unit: ' m',
-    height: 230,
-    band: (d) => (d.prod100 ? [Number(d.prod100) * 0.9, Number(d.prod100)] : null),
-    labels: (d) => [fmt.int(d.actual_meter), d.actual_pct !== null ? fmt.pct(d.actual_pct) : null],
-    tipRows: (d) => [
-      ['Actual (A+B)', fmt.num(d.actual_meter) + ' m'],
-      ['Produksi 100%', fmt.num(d.prod100) + ' m'],
-      ['Efisiensi', p2(d.actual_pct)],
-      ['BS', `${fmt.num(d.bs_pjg)} m · ${p2(d.bs_pct)}`],
-      ['Pick mesin', f2(d.pick_mesin)]
-    ]
-  });
-
-  // The daily ratios, each against its month's own figure.
-  const trend = (host, key, { unit = '', zero = false, label } = {}) => lineChart($(host), g.rows, {
-    x: (d) => d.tgl,
-    y: (d) => (d[key] === null || d[key] === undefined ? null : Number(d[key])),
-    format: f2,
-    unit,
-    height: 200,
-    baseZero: zero,
-    // The month's own figure, as a line the days are read against.
-    reference: t[key] === null || t[key] === undefined ? null : Number(t[key]),
-    referenceLabel: t[key] === null || t[key] === undefined ? '' : `${label} ${f2(t[key])}${unit}`,
-    tipRows: (d) => [
-      [sheetDay(d.tgl), `${f2(d[key])}${unit}`],
-      ['Actual (A+B)', `${f2(d.actual_meter)} m`],
-      ['Produksi 100%', `${f2(d.prod100)} m`]
-    ]
-  });
-  trend('#gabEffChart', 'actual_pct', { unit: '%', label: 'bulan ini' });
-  trend('#gabBsChart', 'bs_pct', { unit: '%', zero: true, label: 'bulan ini' });
-  trend('#gabPickChart', 'pick_mesin', { label: 'rata-rata' });
-  trend('#gabPiChart', 'pick_inspect', { label: 'rata-rata' });
-
-  paintShuttle(g.shuttle, g.month);
-}
-
-/**
- * Shuttle's own output for the month: METER against PRODUKSI 100% at the
- * shed's RPM. Beside the report, not in it — see the note it carries.
- */
-function paintShuttle(s, month) {
-  // Shown even without data, so a month with no shuttle report says so
-  // rather than leaving the shed out without a word.
-  if (!s) {
-    $('#gabShuttleSub').textContent = `Belum ada laporan Shuttle untuk ${monthName(month)}.`;
-    $('#gabShuttleChart').innerHTML = '';
-    $('#gabShuttleNote').textContent = '';
-    return;
+  // Which family is missing on which days, so a low total is not misread.
+  const notes = [];
+  for (const f of fams) {
+    const missing = g.rows.filter((d) => !d.fam[f]).map((d) => sheetDay(d.tgl));
+    if (!g.total.fam[f]) notes.push(`${FAMILY_LABEL[f]}: belum ada data bulan ini.`);
+    else if (missing.length) {
+      notes.push(`${FAMILY_LABEL[f]}: tidak ada data untuk ${missing.length} hari (${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ', …' : ''}).`);
+    }
   }
-  const t = s.total;
-  $('#gabShuttleSub').textContent = `${fmt.int(t.meter)} m dari produksi 100% ${fmt.int(t.prod100)} m · ` +
-    `efisiensi ${p2(t.eff)} · ${fmt.int(t.machines)} mesin · ${t.days} hari`;
-  lineChart($('#gabShuttleChart'), s.days, {
+  if (g.rows.some((d) => fams.some((f) => d.fam[f] && d.fam[f].shifts < full[f] * 0.9))) {
+    notes.push('Angka oranye: hari itu baru sebagian shift terisi.');
+  }
+  notes.push('Efisiensi dihitung pada shift yang punya pick dan RPM target, sama seperti tab Produksi. Lihat tab Kelengkapan Data untuk detail.');
+  $('#gabNote').textContent = notes.join(' ');
+
+  const t = g.total;
+  const vsPrev = (now, before) => {
+    if (!prev || before === null || before === undefined || now === null) return '';
+    const d = now - before;
+    return `<span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${f2(Math.abs(d))} poin</span> vs ${BULAN[Number(prev.month.slice(5)) - 1]}`;
+  };
+  $('#gabStats').innerHTML = [
+    // Whole metres in the tiles: the decimals are in the table.
+    tile('Total output', fmt.int(t.meter), 'm', `rata-rata ${fmt.int(g.avg.meter)} m/hari`),
+    tile('Efisiensi', p2(t.eff), '', vsPrev(t.eff, prev?.total.eff) || `dari ${fmt.int(t.prod100)} m produksi 100%`),
+    ...fams.map((f) => (t.fam[f]
+      ? tile(FAMILY_LABEL[f], fmt.int(t.fam[f].meter), 'm', `efisiensi ${p2(t.fam[f].eff)} · ${t.fam[f].days} hari`)
+      : tile(FAMILY_LABEL[f], '—', '', 'belum ada data')))
+  ].join('');
+
+  lineChart($('#gabEffChart'), g.rows, {
     x: (d) => d.tgl,
     y: (d) => d.eff,
     format: f2,
     unit: '%',
-    height: 200,
+    height: 220,
     baseZero: false,
     reference: t.eff,
     referenceLabel: t.eff === null ? '' : `bulan ini ${p2(t.eff)}`,
     tipRows: (d) => [
       [sheetDay(d.tgl), p2(d.eff)],
-      ['Meter', `${f2(d.meter)} m`],
+      ...fams.filter((f) => d.fam[f]).map((f) => [FAMILY_LABEL[f], `${f2(d.fam[f].meter)} m · ${p2(d.fam[f].eff)}`]),
+      ['Total', `${f2(d.meter)} m`],
       ['Produksi 100%', `${f2(d.prod100)} m`]
     ]
   });
-  $('#gabShuttleNote').textContent = 'Tidak masuk total gabungan di atas, sama seperti sheet pabrik.' +
-    (s.no_meter ? ` ${fmt.int(s.no_meter)} shift ada sodokannya tapi METER-nya 0 (tabel SODOKAN belum lengkap).` : '');
 }
 
 $('#gabMonth').addEventListener('change', (e) => { state.gabMonth = e.target.value; loadGabungan(); });
-$('#gabSource').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-src]');
-  if (!b || b.disabled || b.dataset.src === state.gabSource) return;
-  // The two sources cover different months, so the month is picked afresh.
-  state.gabSource = b.dataset.src;
-  state.gabMonth = '';
-  loadGabungan();
-});

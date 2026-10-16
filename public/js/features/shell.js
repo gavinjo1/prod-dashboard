@@ -23,7 +23,6 @@ import { syncFilterSummary } from './filters.js';
 
 export async function refresh() {
   // Absent for a viewer: the buttons are removed at sign-in.
-  if ($('#btnExport')) $('#btnExport').href = `/api/export.csv?${params()}`;
   if ($('#btnExportXlsx')) $('#btnExportXlsx').href = `/api/export.xlsx?${params()}`;
   syncFilterSummary();
   if (state.tab === 'production') {

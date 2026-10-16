@@ -30,7 +30,6 @@ $('#whoami').hidden = false;
 if (!canWrite) {
   // Exports are for operators and admins; the API refuses viewers anyway.
   $('#gabExport')?.remove();
-  $('#entryForm')?.closest('.card')?.remove();
   $('#drop')?.closest('.card')?.remove();
   $('#loomDrop')?.closest('.card')?.remove();
   // Typing shifts in is for operators and admins; the API refuses viewers.
@@ -38,7 +37,6 @@ if (!canWrite) {
   $('#panel-shiftinput')?.remove();
   // The export carries every customer and order in one file, so it is for
   // the people who work with the data, not everyone who can look at it.
-  $('#btnExport')?.remove();
   $('#btnExportXlsx')?.remove();
 }
 // The target effectiveness is the mill's number: an admin sets it, everyone

@@ -35,19 +35,6 @@ export function applyFamily(family) {
       : `Berkas yang diunggah akan dicatat sebagai mesin ${FAMILY_LABEL[family]}.`;
   }
 
-  // A typed shift belongs to one family's machines; Semua has none of its own.
-  // Viewers have no form at all.
-  if ($('#entryForm')) {
-    ['#entryForm', '#entryAuto', '#entryResult'].forEach((s) => { $(s).hidden = family === 'semua'; });
-    $('#entryNoFamily').hidden = family !== 'semua';
-    // Shuttle is counted by KETIK and SODOKAN into METER, with no RPM reading.
-    $$('#entryForm [data-only]').forEach((el) => { el.hidden = el.dataset.only !== family; });
-    $$('#entryForm [data-not]').forEach((el) => { el.hidden = el.dataset.not === family; });
-    $('#eProdLabel').textContent = family === 'shuttle' ? 'Meter' : 'Output (m)';
-    // What was filled in for another family's machine does not carry over.
-    $('#eClear').click();
-  }
-
   // Stay on the current tab when it belongs to this family too (Import).
   const current = $(`.tab[data-tab="${state.tab}"]`);
   if (current && !current.hidden) return switchTab(state.tab);

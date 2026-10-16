@@ -24,10 +24,13 @@
   <nav class="tabs" role="tablist">
     <button class="tab" data-tab="gabungan" data-family="semua" role="tab">Laporan Gabungan</button>
     <button class="tab is-active" data-tab="production" data-family="ajl rapier shuttle" role="tab">Produksi</button>
-    <button class="tab" data-tab="quality" data-family="ajl rapier shuttle" role="tab">Kualitas</button>
+    <!-- Hidden for now: the quality report is still imported and stored, only not shown.
+         To bring it back, give it data-family="ajl rapier shuttle" and drop hidden. -->
+    <button class="tab" data-tab="quality" role="tab" hidden>Kualitas</button>
     <button class="tab" data-tab="efisiensi" data-family="ajl rapier shuttle" role="tab">Efisiensi Kain</button>
     <button class="tab" data-tab="shiftinput" data-family="ajl rapier shuttle" role="tab">Input Shift</button>
-    <button class="tab" data-tab="mesin" data-family="ajl rapier shuttle" role="tab">Data Mesin</button>
+    <!-- Hidden for now: the registry still feeds Input Shift and Kelengkapan Data. -->
+    <button class="tab" data-tab="mesin" role="tab" hidden>Data Mesin</button>
     <button class="tab" data-tab="master" data-family="semua ajl rapier shuttle" role="tab">Master MO</button>
     <button class="tab" data-tab="import" data-family="semua ajl rapier shuttle" role="tab">Import</button>
     <button class="tab" data-tab="kelengkapan" data-family="semua ajl rapier shuttle" role="tab">Kelengkapan Data</button>
@@ -92,28 +95,20 @@
 <!-- ------------------------------------------------------------------ -->
 <main>
 
-<!-- Semua: the combined monthly report across every loom family, laid out
-     the way the mill's LAPORAN PRODUKSI GABUNGAN sheet is. -->
+<!-- Semua: every loom family's daily output side by side, from the shifts —
+     the same figures as each family's Produksi tab. -->
 <div class="panel" id="panel-gabungan">
   <section class="card" id="gabEmpty" hidden>
     <div class="card-head">
       <h2>Belum ada laporan gabungan</h2>
-      <p class="card-sub">Import laporan harian di tab Import.</p>
+      <p class="card-sub">Import laporan harian di tab Import, atau isi lewat Input Shift.</p>
     </div>
   </section>
 
   <div id="gabBody">
-    <!-- The mill's sheet first, laid out as it is printed: same columns, same
-         rows, same total block, the previous month underneath. -->
     <section class="card gab-sheet">
       <div class="gab-bar">
         <div class="gab-controls">
-          <div class="field"><span>Sumber</span>
-            <div class="segmented" role="group" aria-label="Sumber angka" id="gabSource">
-              <button class="seg" data-src="auto">Otomatis</button>
-              <button class="seg" data-src="file">File GABUNGAN</button>
-            </div>
-          </div>
           <label class="field gab-month"><span>Bulan</span><select id="gabMonth"></select></label>
           <a class="btn" id="gabExport" href="#" download>Export Excel</a>
         </div>
@@ -121,30 +116,12 @@
 
       <header class="gab-title">
         <h2 id="gabTitle">LAPORAN PRODUKSI GABUNGAN</h2>
-        <p id="gabSub">SHUTTLE - RAPIER - AJL TOYOTA ( AJL TOYOTA LAMA + <span class="gab-red">AJL TOYOTA BARU</span> )</p>
+        <p>Output mesin (counter) per hari, sama dengan tab Produksi tiap jenis mesin</p>
       </header>
 
       <div class="gab-wrap">
         <table class="gab-table" id="gabTable">
-          <thead>
-            <tr>
-              <th rowspan="2">TGL</th>
-              <th colspan="2">BS</th>
-              <th colspan="2">ACTUAL HASIL KAIN<br>GABUNGAN (A+B)</th>
-              <th>PRODUKSI</th>
-              <th rowspan="2">PICK<br>MESIN</th>
-              <th colspan="5">PICK MESIN/BULAN</th>
-              <th colspan="4">PICK KAIN INSPECT/BULAN</th>
-              <th rowspan="2" class="gab-green-h">PICK<br>INSPECT<br>PERHARI</th>
-            </tr>
-            <tr>
-              <th>PJG</th><th>%</th>
-              <th>METER</th><th>%</th>
-              <th>100%</th>
-              <th>SHUTTLE</th><th>RAPIER</th><th>AJL</th><th>PICK MC</th><th>PICK MC X PROD</th>
-              <th>SHUTTLE</th><th>RAPIER</th><th>AJL 1+2+3+4</th><th>PICK KAIN INSPECT X<br>PROD</th>
-            </tr>
-          </thead>
+          <thead></thead>
           <tbody></tbody>
           <tfoot></tfoot>
         </table>
@@ -152,54 +129,14 @@
       <p class="note-line" id="gabNote"></p>
     </section>
 
-    <!-- Then the same month as pictures. -->
     <div class="stats" id="gabStats"></div>
 
     <figure class="card">
       <figcaption class="card-head">
-        <h2>Hasil kain per hari</h2>
+        <h2>Efisiensi per hari</h2>
+        <p class="card-sub">Output dibanding produksi 100% (RPM target), semua jenis mesin.</p>
       </figcaption>
-      <div class="chart" id="gabChart"></div>
-    </figure>
-
-    <div class="grid grid-even">
-      <figure class="card">
-        <figcaption class="card-head">
-          <h2>Efisiensi per hari</h2>
-        </figcaption>
-        <div class="chart" id="gabEffChart"></div>
-      </figure>
-      <figure class="card">
-        <figcaption class="card-head">
-          <h2>BS per hari</h2>
-        </figcaption>
-        <div class="chart" id="gabBsChart"></div>
-      </figure>
-    </div>
-
-    <div class="grid grid-even">
-      <figure class="card">
-        <figcaption class="card-head">
-          <h2>Pick mesin per hari</h2>
-        </figcaption>
-        <div class="chart" id="gabPickChart"></div>
-      </figure>
-      <figure class="card">
-        <figcaption class="card-head">
-          <h2>Pick kain inspect per hari</h2>
-        </figcaption>
-        <div class="chart" id="gabPiChart"></div>
-      </figure>
-    </div>
-
-    <!-- Shuttle on its own: the looms' output, outside the combined figures. -->
-    <figure class="card" id="gabShuttle">
-      <figcaption class="card-head">
-        <h2>Shuttle · efisiensi mesin per hari</h2>
-        <p class="card-sub" id="gabShuttleSub"></p>
-      </figcaption>
-      <div class="chart" id="gabShuttleChart"></div>
-      <p class="note-line" id="gabShuttleNote"></p>
+      <div class="chart" id="gabEffChart"></div>
     </figure>
   </div>
 </div>
@@ -513,55 +450,6 @@
 
 <!-- ------------------------------------------------------------------ -->
 <div class="panel" id="panel-import">
-  <section class="card">
-    <div class="card-head">
-      <h2>Input satu shift</h2>
-    </div>
-    <p class="note-line" id="entryNoFamily" hidden>Pilih AJL, Rapier atau Shuttle dulu untuk input manual.</p>
-
-    <form class="entry" id="entryForm" autocomplete="off">
-      <label class="field"><span>Tanggal</span>
-        <input type="date" id="eTgl" required></label>
-      <label class="field"><span>Shift</span>
-        <select id="eShift" required><option>A</option><option>B</option><option>C</option></select></label>
-      <label class="field"><span>Jam shift</span>
-        <select id="eJamSlot"></select></label>
-      <div class="field" id="eJamCustom" hidden><span>Mulai – selesai</span>
-        <div class="hours-pair">
-          <input type="time" id="eJamMulai" aria-label="Jam mulai">
-          <input type="time" id="eJamSelesai" aria-label="Jam selesai">
-        </div>
-      </div>
-      <label class="field"><span>Mesin</span>
-        <input id="eMc" list="dlMachines" placeholder="A1" required></label>
-      <label class="field"><span>Order</span>
-        <input id="eMo" list="dlOrders" placeholder="MO/UW/…"></label>
-      <label class="field" data-only="shuttle" hidden><span>Ketik</span>
-        <input id="eKetik" type="number" step="0.1" min="0" placeholder="0"></label>
-      <label class="field" data-only="shuttle" hidden><span>Sodokan</span>
-        <input id="eSodokan" type="number" step="0.01" min="0"></label>
-      <label class="field"><span id="eProdLabel">Output (m)</span>
-        <input id="eProd" type="number" step="0.01" min="0" placeholder="0"></label>
-      <label class="field" data-not="shuttle"><span>RPM</span>
-        <input id="eRpm" type="number" step="1" min="0"></label>
-      <label class="field" data-not="shuttle"><span>RPM target</span>
-        <input id="eTarget" type="number" step="1" min="0"></label>
-      <label class="field entry-wide"><span>Catatan (KET BB)</span>
-        <input id="eKet" placeholder="TYING, BONGKAR HB, …"></label>
-
-      <div class="entry-actions">
-        <button class="btn btn-primary" type="submit" id="eSave">Simpan</button>
-        <button class="btn btn-quiet" type="button" id="eClear">Kosongkan</button>
-      </div>
-    </form>
-
-    <p class="note-line" id="entryAuto"></p>
-    <div id="entryResult"></div>
-
-    <datalist id="dlMachines"></datalist>
-    <datalist id="dlOrders"></datalist>
-  </section>
-
   <div class="grid grid-even">
     <section class="card">
       <div class="card-head">

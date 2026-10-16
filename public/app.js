@@ -15,7 +15,6 @@ import './js/features/production/charts.js';
 import './js/features/production/machines.js';
 import './js/features/production/edit.js';
 import './js/features/quality.js';
-import './js/features/entry.js';
 import './js/features/users.js';
 import './js/features/import.js';
 import './js/features/gabungan.js';

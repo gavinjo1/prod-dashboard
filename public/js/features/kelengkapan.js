@@ -117,8 +117,8 @@ function paintGaps(d, families) {
     if (d.has[f]?.capacity) {
       const noCap = past.filter((s) => !s.capacity).map((s) => s.tgl);
       if (noCap.length) {
-        items.push(['miss', `<b>${L}</b>: produksi 100% (grid efisiensi) belum ada untuk ${runs(noCap)}.`,
-          'Biasanya terisi kalau file bulan itu diupload ulang setelah bulan selesai. Tanpa ini, kolom pick mesin di Laporan Gabungan kosong.']);
+        items.push(['part', `<b>${L}</b>: grid efisiensi (produksi 100% dari Excel) belum ada untuk ${runs(noCap)}.`,
+          'Biasanya terisi kalau file bulan itu diupload ulang setelah bulan selesai. Laporan Gabungan tidak terpengaruh: produksi 100% di sana dihitung dari shift.']);
       }
     }
     if (d.has[f]?.grade) {
@@ -131,7 +131,7 @@ function paintGaps(d, families) {
     if (!d.has[f]?.grade || !d.has[f]?.capacity) {
       const what = [!d.has[f]?.grade && 'laporan kualitas', !d.has[f]?.capacity && 'grid produksi 100%'].filter(Boolean).join(' dan ');
       items.push(['na', `<b>${L}</b>: belum pernah ada ${what}.`,
-        `Kolom ${L} di Laporan Gabungan tetap kosong sampai laporan itu ada. Tanyakan ke QC/PPIC apakah ada.`]);
+        'Laporan Gabungan tidak terpengaruh (memakai output mesin). Tanyakan ke QC/PPIC apakah laporan itu ada.']);
     }
     const m = d.master[f];
     if (m && m.in_master < m.mos) {

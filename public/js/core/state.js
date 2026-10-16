@@ -18,8 +18,7 @@ export const state = {
   search: '',
   tab: 'production',
   family: 'ajl',
-  gabMonth: '',
-  gabSource: ''
+  gabMonth: ''
 };
 
 export function params() {

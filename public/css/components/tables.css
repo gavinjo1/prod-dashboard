@@ -95,11 +95,7 @@ th.is-sorted-desc::after { content: " ↓"; width: auto; }
 }
 .entry .field input:focus-visible,
 .entry .field select:focus-visible { outline: 2px solid var(--series-1); outline-offset: -1px; }
-.entry-wide { grid-column: span 2; }
 
-/* The two time boxes read as one value, so they share a cell. */
-.hours-pair { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.hours-pair input { flex: 1 1 0; min-width: 0; }
 .entry-actions { display: flex; gap: 8px; }
 
 .btn-primary {
@@ -112,8 +108,7 @@ th.is-sorted-desc::after { content: " ↓"; width: auto; }
 
 @media (max-width: 860px) {
   .entry { grid-template-columns: 1fr 1fr; }
-  .entry-wide { grid-column: span 2; }
-  /* Two time boxes in half a phone screen clip their own text — give the
+    /* Two time boxes in half a phone screen clip their own text — give the
      pair the full row instead. */
   #eJamCustom { grid-column: span 2; }
   .entry-actions { grid-column: span 2; }

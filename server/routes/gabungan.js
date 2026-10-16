@@ -1,291 +1,134 @@
 /**
- * Semua: the combined monthly report and its Excel file.
+ * Semua: every loom family's daily output side by side, and its Excel file.
  */
 import { Router } from 'express';
 import XLSX from 'xlsx';
 import { query } from '../db.js';
 import { send, AppError } from '../errors.js';
-import { gabSheet, BULAN_UP } from '../gabungan-xlsx.js';
+import { semuaSheet, BULAN_UP } from '../gabungan-xlsx.js';
 import { requireRole } from '../auth.js';
 import { pricedShifts } from '../lib/formulas.js';
+import { FAMILIES } from '../importer/index.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
 
 /* ------------------------------------------------------------------ *
- * Semua — the combined report across every loom family
+ * Semua — the families' output together, month by month
  *
- * Month by month, the way the mill's GABUNGAN sheet is laid out. Only the
- * measured figures are stored; the ratios are worked out here, the same way
- * for a day as for the month, so the total row cannot disagree with the days.
+ * Built from the shifts themselves, the same figures as each family's
+ * Produksi tab: the metres woven (the counter), against PRODUKSI 100% — what
+ * the looms could weave at their RPM target, the Produksi tab's capability.
+ * Efficiency is output over capability on the shifts that can be priced (a
+ * shift with no pick or RPM target has no capability, so its output is left
+ * out of both sides), as on the Produksi tab.
+ *
+ * Grade (A+B, BS, pick inspect) is not part of it. The quality report is
+ * still imported and stored; it is just not what this page shows.
  * ------------------------------------------------------------------ */
-
-const GAB = ['bs_pjg', 'actual_meter', 'prod100', 'pm_shuttle', 'pm_rapier', 'pm_ajl',
-  'pi_shuttle', 'pi_rapier', 'pi_ajl'];
-
-/** A column's total, or null when no day has it — 0 would claim a measurement. */
-const sumOf = (rows, k) => {
-  const have = rows.filter((r) => r[k] !== null && r[k] !== undefined);
-  return have.length ? have.reduce((t, r) => t + Number(r[k]), 0) : null;
-};
-const addUp = (...vals) => (vals.every((v) => v === null || v === undefined)
-  ? null : vals.reduce((t, v) => t + (Number(v) || 0), 0));
-
-/** The sheet's derived columns, from a day's figures or a period's sums. */
-function gabDerive(s) {
-  const pmx = addUp(s.pm_shuttle, s.pm_rapier, s.pm_ajl);
-  const pix = addUp(s.pi_shuttle, s.pi_rapier, s.pi_ajl);
-  const actual = Number(s.actual_meter) || 0;
-  const bs = Number(s.bs_pjg) || 0;
-  const ratio = (a, b) => (a !== null && b ? a / b : null);
-  // Against PRODUKSI 100%, only the cloth of families whose 100% is there: a
-  // family's A+B over the other families' capacity put Rapier's 23–30 Sep
-  // inspection on top of AJL's 100% and read 91% for a 79% day.
-  const priced = s.actual_priced === null || s.actual_priced === undefined ? actual : Number(s.actual_priced);
-  return {
-    ...s,
-    bs_pct:          s.bs_pjg === null ? null : ratio(bs * 100, actual + bs),
-    actual_pct:      ratio(priced * 100, Number(s.prod100) || 0),
-    // Set when some cloth was left out of the % for want of its 100%.
-    actual_pct_partial: priced !== actual,
-    pick_mc_x_prod:  pmx,
-    // Divided by the inspected metres, as the sheet does: 8.342.319,70 over
-    // 159.496,25 is its 52,30 for 1 Sep.
-    pick_mesin:      ratio(pmx, actual),
-    pick_inspect_x_prod: pix,
-    pick_inspect:    ratio(pix, actual)
-  };
-}
-
-function gabPeriod(rows) {
-  const sum = Object.fromEntries([...GAB, 'actual_priced'].map((k) => [k, sumOf(rows, k)]));
-  const days = rows.length;
-  const per = (k) => (sum[k] === null ? null : sum[k] / days);
-  return {
-    days,
-    total: gabDerive(sum),
-    // Per day, as the sheet's second total line has it: the lengths divided
-    // by the days reported. The ratios are the same as the total's.
-    avg: days ? { bs_pjg: per('bs_pjg'), actual_meter: per('actual_meter'), prod100: per('prod100') } : null
-  };
-}
-
-/* ---- where the figures come from ----
- *
- * "auto" builds the report from the daily data already imported, family by
- * family. Every formula below was checked against the mill's own sheet for
- * September — to the cent, for AJL and Rapier on each day tried:
- *
- *   BS PJG             GRADE: BS + RK. The mill's "BS" is both — the AJL
- *                      quality sheet's 2.583,37 for 1 Sep is 2.107,87 + 475,50.
- *   ACTUAL (A+B)       GRADE: A + B
- *   PRODUKSI 100%      the monthly sheet's prod100%
- *   PICK MESIN/BULAN   a family's A+B × that day's average machine pick from
- *                      its monthly sheet (PICK RATA2). Not the shifts' output
- *                      × the order's pick, which ran 6–8% off.
- *   PICK KAIN INSPECT  each inspected order's A+B × its pick; where the order
- *                      header carries none, the pick of the same fabric on
- *                      another order — the sheet does the same.
- *
- * Shuttle has no daily report imported, so its columns stay empty.
- *
- * "file" reads the uploaded LAPORAN PRODUKSI GABUNGAN as it was typed.
- */
 
 const monthBounds = (m) => {
   const [y, mo] = m.split('-').map(Number);
   const next = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
   return [`${m}-01`, `${next}-01`];
 };
-
-const GAB_SOURCES = {
-  file: {
-    months: `SELECT DISTINCT to_char(tgl, 'YYYY-MM') AS m FROM gabungan_harian`,
-    async load(m) {
-      const [lo, hi] = monthBounds(m);
-      return (await query(
-        `SELECT tgl::text AS tgl, ${GAB.join(', ')} FROM gabungan_harian
-         WHERE tgl >= $1 AND tgl < $2 ORDER BY tgl`, [lo, hi])).rows;
-    }
-  },
-  auto: {
-    months: `SELECT to_char(tgl, 'YYYY-MM') AS m FROM production
-             UNION SELECT to_char(tgl, 'YYYY-MM') FROM grade`,
-    async load(m) {
-      const [lo, hi] = monthBounds(m);
-      const { rows } = await query(`
-        WITH g AS (
-          SELECT g.family, g.tgl, g.bs + g.rk AS bs, g.grade_a + g.grade_b AS ab,
-                 COALESCE(
-                   mo_pick(g.mo, g.tgl),
-                   (SELECT o.pick FROM order_info o
-                     WHERE o.kode_kain = g.kode_kain AND o.pick IS NOT NULL
-                     ORDER BY abs(o.as_of - g.tgl), o.as_of DESC LIMIT 1)
-                 ) AS pick
-          FROM grade g
-          WHERE g.tgl >= $1 AND g.tgl < $2
-        ),
-        fam AS (
-          SELECT tgl, family, sum(bs) AS bs, sum(ab) AS ab, sum(ab * pick) AS pi,
-                 COALESCE(sum(ab) FILTER (WHERE pick IS NULL), 0) AS no_pick
-          FROM g GROUP BY tgl, family
-        ),
-        cap AS (
-          SELECT tgl, family, prod100, pick_rata2
-          FROM daily_capacity WHERE tgl >= $1 AND tgl < $2
-        ),
-        per AS (
-          SELECT COALESCE(f.tgl, c.tgl) AS tgl, COALESCE(f.family, c.family) AS family,
-                 f.bs, f.ab, f.pi, f.no_pick, c.prod100,
-                 f.ab * c.pick_rata2 AS pm
-          FROM fam f FULL JOIN cap c ON c.tgl = f.tgl AND c.family = f.family
-        )
-        SELECT tgl::text AS tgl,
-               sum(bs) AS bs_pjg, sum(ab) AS actual_meter, sum(prod100) AS prod100,
-               -- The cloth that has its family's 100% beside it, and the families that do not.
-               sum(ab) FILTER (WHERE prod100 IS NOT NULL) AS actual_priced,
-               string_agg(family, ',' ORDER BY family) FILTER (WHERE ab > 0 AND prod100 IS NULL) AS no_cap,
-               sum(pm) FILTER (WHERE family = 'shuttle') AS pm_shuttle,
-               sum(pm) FILTER (WHERE family = 'rapier')  AS pm_rapier,
-               sum(pm) FILTER (WHERE family = 'ajl')     AS pm_ajl,
-               sum(pi) FILTER (WHERE family = 'shuttle') AS pi_shuttle,
-               sum(pi) FILTER (WHERE family = 'rapier')  AS pi_rapier,
-               sum(pi) FILTER (WHERE family = 'ajl')     AS pi_ajl,
-               COALESCE(sum(no_pick), 0) AS no_pick
-        FROM per GROUP BY tgl ORDER BY tgl`, [lo, hi]);
-      return rows;
-    }
-  }
+const prevMonthOf = (m) => {
+  const [y, mo] = m.split('-').map(Number);
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
 };
+const n = (v) => (v === null || v === undefined ? null : Number(v));
+const add = (a, b) => (a === null ? b : b === null ? a : a + b);
+const eff = (priced, cap) => (cap ? (priced * 100) / cap : null);
 
-/** What the automatic report is built from that month, said plainly. */
-async function autoCoverage(m) {
-  const [lo, hi] = monthBounds(m);
-  const { rows: fam } = await query(
-    `SELECT family, count(DISTINCT tgl)::int AS days FROM production
-     WHERE tgl >= $1 AND tgl < $2 GROUP BY family`, [lo, hi]);
-  const one = async (sql) => (await query(sql, [lo, hi])).rows[0].n;
-  return {
-    families: Object.fromEntries(fam.map((r) => [r.family, r.days])),
-    grade_days: await one('SELECT count(DISTINCT tgl)::int AS n FROM grade WHERE tgl >= $1 AND tgl < $2'),
-    capacity_days: await one('SELECT count(DISTINCT tgl)::int AS n FROM daily_capacity WHERE tgl >= $1 AND tgl < $2')
-  };
-}
-
-/**
- * Shuttle on its own: the looms' METER against what they could weave at the
- * shed's RPM, by the same formula as the Produksi tab. Kept out of the
- * combined figures, as on the mill's own sheet: the shed has no inspection
- * report, so its A+B, BS and picks are not known.
- */
-async function shuttleMonth(m) {
+/** Each day of a month with output: per family, and all families together. */
+async function monthDays(m) {
   const [lo, hi] = monthBounds(m);
   const { rows } = await query(`
-    WITH ${pricedShifts(`WHERE p.family = 'shuttle' AND p.tgl >= $1 AND p.tgl < $2`)}
-    SELECT tgl::text AS tgl,
-           sum(produksi)                         AS meter,
-           sum(capability) FILTER (WHERE priced) AS prod100,
-           sum(produksi)   FILTER (WHERE priced) AS priced_meter,
-           count(DISTINCT no_mc)::int            AS machines
-    FROM r GROUP BY GROUPING SETS ((tgl), ()) ORDER BY tgl NULLS LAST`, [lo, hi]);
-  const total = rows.pop();
-  if (!rows.length) return null;
-  const eff = (d) => (Number(d.prod100) ? Number(d.priced_meter) / Number(d.prod100) * 100 : null);
-  const { rows: [gap] } = await query(`
-    SELECT count(*)::int AS n FROM production
-    WHERE family = 'shuttle' AND tgl >= $1 AND tgl < $2
-      AND sodokan > 0 AND COALESCE(produksi, 0) = 0`, [lo, hi]);
+    WITH ${pricedShifts(`WHERE p.tgl >= $1 AND p.tgl < $2`)}
+    SELECT tgl::text AS tgl, family,
+           count(*)::int                          AS shifts,
+           sum(produksi)                          AS meter,
+           sum(capability) FILTER (WHERE priced)  AS prod100,
+           sum(produksi)   FILTER (WHERE priced)  AS priced
+    FROM r GROUP BY 1, 2 ORDER BY 1`, [lo, hi]);
+  const days = new Map();
+  for (const r of rows) {
+    const d = days.get(r.tgl) ?? { tgl: r.tgl, fam: {} };
+    d.fam[r.family] = { shifts: r.shifts, meter: n(r.meter), prod100: n(r.prod100), priced: n(r.priced) };
+    days.set(r.tgl, d);
+  }
+  return [...days.values()].map(summed);
+}
+
+/** A day's or a period's family figures, added up across families, with the ratios. */
+function summed(d) {
+  let meter = null, prod100 = null, priced = null;
+  for (const f of FAMILIES) {
+    const x = d.fam[f];
+    if (!x) continue;
+    x.eff = eff(x.priced ?? 0, x.prod100);
+    meter = add(meter, x.meter);
+    prod100 = add(prod100, x.prod100);
+    priced = add(priced, x.priced);
+  }
+  return { ...d, meter, prod100, priced, eff: eff(priced ?? 0, prod100) };
+}
+
+/** The month as a whole: totals, and per day over the days with output. */
+function period(rows) {
+  const fam = {};
+  for (const f of FAMILIES) {
+    const have = rows.filter((d) => d.fam[f]);
+    if (!have.length) continue;
+    const s = (k) => have.reduce((t, d) => add(t, d.fam[f][k]), null);
+    fam[f] = { days: have.length, meter: s('meter'), prod100: s('prod100'), priced: s('priced'), shifts: s('shifts') };
+  }
+  const total = summed({ fam });
+  const days = rows.length;
+  const per = (v) => (v === null || !days ? null : v / days);
   return {
-    days: rows.map((d) => ({ tgl: d.tgl, meter: Number(d.meter), prod100: Number(d.prod100), eff: eff(d) })),
-    total: { meter: Number(total.meter), prod100: Number(total.prod100), eff: eff(total),
-      machines: total.machines, days: rows.length },
-    // Shifts whose METER the workbook could not work out (no SODOKAN line).
-    no_meter: gap.n
+    days,
+    total,
+    // Per day over the days reported, not the days in the month.
+    avg: { meter: per(total.meter), prod100: per(total.prod100),
+      fam: Object.fromEntries(Object.entries(fam).map(([f, x]) => [f, { meter: x.meter / x.days }])) }
   };
 }
 
-/**
- * The combined report for a month — used by the page and by the Excel export,
- * so the file can never disagree with what is on screen.
- */
-async function gabReport(q) {
-  // The automatic report by default once daily data exists; the uploaded
-  // sheet stays available to check it against.
-  const { rows: [has] } = await query(
-    `SELECT EXISTS (SELECT 1 FROM production) AS daily, EXISTS (SELECT 1 FROM gabungan_harian) AS file`);
-  const source = ['auto', 'file'].includes(q.source) ? q.source
-    : has.daily ? 'auto' : 'file';
-  const src = GAB_SOURCES[source];
-
-  const { rows: months } = await query(`SELECT m FROM (${src.months}) x ORDER BY m DESC`);
+async function semuaReport(q) {
+  const { rows: months } = await query(
+    `SELECT DISTINCT to_char(tgl, 'YYYY-MM') AS m FROM production ORDER BY m DESC`);
   const list = months.map((r) => r.m);
-  // Opened on the latest month with inspected cloth. A month that has only
-  // begun — one day of Rapier, no grade yet — is blank in every column but
-  // one, and opening on it hid the month everyone was still reading.
-  let latest = list[0];
-  if (source === 'auto') {
-    const { rows: [g] } = await query(`SELECT to_char(max(tgl), 'YYYY-MM') AS m FROM grade`);
-    if (list.includes(g?.m)) latest = g.m;
-  }
-  const month = /^\d{4}-\d{2}$/.test(String(q.month)) && list.includes(q.month)
-    ? q.month : latest;
-  const sources = { auto: has.daily, file: has.file };
-  if (!month) return { source, sources, months: [], month: null, rows: [] };
+  const month = /^\d{4}-\d{2}$/.test(String(q.month)) && list.includes(q.month) ? q.month : list[0];
+  if (!month) return { months: [], month: null, rows: [] };
 
   const [y, mo] = month.split('-').map(Number);
-  const prevMonth = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
-  const rows = await src.load(month);
-  let prevRows = await src.load(prevMonth);
-  // In the automatic report a month only stands as a comparison when its
-  // daily reports were imported. September's workbooks carry some of
-  // August's grade lines, and totalling those scraps put a 136% efficiency
-  // and a pick of 15 under "RATA² BULAN AGUSTUS" as if they were the month.
-  let prevSkipped = null;
-  if (source === 'auto' && prevRows.length) {
-    const { families } = await autoCoverage(prevMonth);
-    if (!Object.keys(families).length) { prevSkipped = prevMonth; prevRows = []; }
-  }
-  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-
+  const rows = await monthDays(month);
+  const prevMonth = prevMonthOf(month);
+  const prevRows = list.includes(prevMonth) ? await monthDays(prevMonth) : [];
   return {
-    source,
-    sources,
+    families: FAMILIES,
     months: list,
     month,
-    days_in_month: daysInMonth,
-    rows: rows.map(gabDerive),
-    ...gabPeriod(rows),
-    no_pick: source === 'auto' ? rows.reduce((t, r) => t + Number(r.no_pick || 0), 0) : null,
-    coverage: source === 'auto' ? await autoCoverage(month) : null,
-    prev: prevRows.length ? { month: prevMonth, ...gabPeriod(prevRows) } : null,
-    prev_skipped: prevSkipped,
-    shuttle: await shuttleMonth(month)
+    days_in_month: new Date(Date.UTC(y, mo, 0)).getUTCDate(),
+    rows,
+    ...period(rows),
+    prev: prevRows.length ? { month: prevMonth, ...period(prevRows) } : null
   };
 }
 
 router.get('/api/gabungan', (req, res) => send(res, async () => {
-  res.json(await gabReport(req.query));
+  res.json(await semuaReport(req.query));
 }));
 
-/* ---- Semua as a workbook ----
- *
- * Laid out as the mill's LAPORAN PRODUKSI GABUNGAN is printed: title, the two
- * merged header rows, a line per day, the two-line total block, the days
- * left, and the previous month underneath. Measured figures are written as
- * numbers and everything derived from them as Excel formulas, so a figure
- * corrected in the file recalculates its percentages and picks the way the
- * mill's own sheet does. Each formula also carries the value the dashboard
- * computed, so a viewer that does not recalculate still shows the numbers.
- *
- * Colours, bold and borders are not written: the free SheetJS build cannot.
- */
+/* ---- Semua as a workbook: the page's table, the same figures ---- */
 
 router.get('/api/gabungan.xlsx', requireRole('operator'), (req, res) => send(res, async () => {
-  const g = await gabReport(req.query);
+  const g = await semuaReport(req.query);
   if (!g.month) throw new AppError('Belum ada data untuk laporan gabungan.', 404);
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, gabSheet(g), 'GABUNGAN');
+  XLSX.utils.book_append_sheet(wb, semuaSheet(g), 'GABUNGAN');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
   const [y, m] = g.month.split('-').map(Number);
