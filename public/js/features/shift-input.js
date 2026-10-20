@@ -76,6 +76,8 @@ function valueOf(m, field) {
   if (e && field in e) return e[field];
   const s = m.saved;
   if (field === 'mo') return s?.mo ?? m.mo ?? '';
+  // Fabrics woven at once: the shift's if saved, else the machine's.
+  if (field === 'jml_kain') return String(m.jml_kain ?? '');
   // Saved numbers shown with a decimal comma, as everything else here is.
   if (CARD.includes(field)) return dec(m.card?.[field]);
   if (field.startsWith('b_')) return beamShown(m, field.slice(2));
@@ -89,8 +91,11 @@ function valueOf(m, field) {
 }
 
 /** Capability of one machine-shift at its target RPM, as the Produksi tab has it. */
-const capOf = (m, pick) => (pick > 0 && m.rpm_target > 0 && m.jml_kain > 0
-  ? (m.rpm_target * 480 * 2.54) / (pick * 100) * m.jml_kain : null);
+const capOf = (m, pick, kain) => (pick > 0 && m.rpm_target > 0 && kain > 0
+  ? (m.rpm_target * 480 * 2.54) / (pick * 100) * kain : null);
+const sulzer = (m) => /SULZER/i.test(m.type_mc ?? '');
+/** The fabrics this shift is woven with: as chosen on the row, else the machine's. */
+const kainOf = (m) => Number(valueOf(m, 'jml_kain')) || m.jml_kain_mc || null;
 
 /**
  * Everything the row works out from what is typed, the same way the server
@@ -125,11 +130,11 @@ function derive(m) {
         : `tabel SODOKAN belum punya ${kode ?? 'kain ini'} / MC ${m.width} — isi meter`;
     }
   } else if (ketik !== null) {
-    if (fam === 'rapier' && /SULZER/i.test(m.type_mc ?? '')) {
+    if (fam === 'rapier' && sulzer(m)) {
       if (pick > 0) out.output = (1000 / pick / 39.37) * ketik;
       else if (ketik > 0) out.bad = 'pick order belum diketahui';
       else out.output = 0;
-    } else if (m.jml_kain > 0) out.output = ketik * m.jml_kain;
+    } else if (kainOf(m) > 0) out.output = ketik * kainOf(m);
     else out.bad = 'jumlah kain mesin belum diketahui';
   }
   if (out.output === null && !out.bad && note) out.output = 0;   // a note alone: did not run
@@ -150,7 +155,7 @@ function derive(m) {
     }
   }
 
-  const cap = capOf(m, pick);
+  const cap = capOf(m, pick, fam === 'shuttle' ? 1 : kainOf(m));
   out.pct = out.output !== null && cap ? (out.output / cap) * 100 : null;
   if (out.pct !== null && out.pct > 100) out.warn.push('⚠ di atas kapasitas');
   if (mo && !order && mo !== m.mo) out.warn.push('MO belum dikenal');
@@ -173,6 +178,22 @@ const locked = (m) => !!m.saved && !si.editing.has(m.no_mc) && !si.edits.has(m.n
 const input = (m, field, cls = '', extra = '') =>
   `<input class="si-in ${cls}" data-mc="${esc(m.no_mc)}" data-f="${field}" value="${esc(valueOf(m, field))}" ${extra}${
     locked(m) ? ' disabled' : ''}>`;
+
+/**
+ * ×1 / ×2: how many fabrics the loom wove this shift. Data Mesin's by
+ * default; set lower when one side stood, and marked when it differs.
+ * SULZER's metres come from the pick, not from fabrics.
+ */
+function kainCell(m) {
+  if (sulzer(m)) return '<td class="muted si-kaincol">—</td>';
+  const v = kainOf(m);
+  const mc = m.jml_kain_mc;
+  const opts = [...new Set([1, 2, mc, v].filter((x) => x > 0))].sort((a, b) => a - b);
+  const diff = mc && v !== mc;
+  return `<td class="si-kaincol"><select class="si-in si-kain${diff ? ' is-diff' : ''}" data-mc="${esc(m.no_mc)}" data-f="jml_kain"
+    aria-label="${esc(m.no_mc)} jumlah kain" title="${esc(diff ? `Data Mesin ×${mc}; shift ini ×${v}` : `Jumlah kain sekaligus (Data Mesin ×${mc ?? '?'})`)}"${
+    locked(m) ? ' disabled' : ''}>${opts.map((o) => `<option value="${o}"${o === v ? ' selected' : ''}>×${o}</option>`).join('')}</select></td>`;
+}
 
 function actionsOf(m) {
   if (!m.saved) return '<td class="si-act"></td>';
@@ -213,6 +234,7 @@ function cellsOf(m) {
       ${reading('rpm', `placeholder="${esc(m.rpm_target ?? '')}"`)}${reading('eff')}${reading('pl')}
       ${reading('cmpx_pl', `placeholder="${esc(d.cmpx?.cmpx_pl ?? '')}"`)}${reading('pp')}
       ${reading('cmpx_pp', `placeholder="${esc(d.cmpx?.cmpx_pp ?? '')}"`)}${reading('ketik')}
+      ${kainCell(m)}
       <td class="num si-out">${one(d.output)}</td>
       <td class="num si-pct">${d.pct === null ? '' : fmt.pct(d.pct)}</td>
       <td>${input(m, 'ket_bb', 'si-note', 'placeholder="keterangan"')}</td>
@@ -222,6 +244,7 @@ function cellsOf(m) {
   return `${common}
     <td>${input(m, 'ketik', 'si-num', 'inputmode="decimal"')}</td>
     <td>${input(m, 'rpm', 'si-num', `inputmode="numeric" placeholder="${esc(m.rpm_target ?? '')}"`)}</td>
+    ${kainCell(m)}
     <td class="num si-out">${one(d.output)}</td>
     ${tail}`;
 }
@@ -250,11 +273,11 @@ function paintTable() {
     <th>Mesin</th><th>Tipe</th><th>MO</th><th>Kain</th>
     ${BEAM.map(([, label]) => `<th class="si-beamcol">${label}</th>`).join('')}
     <th>RPM</th><th>EFF</th><th>PL</th><th>CMPX</th><th>PP</th><th>CMPX</th><th>COUNT</th>
-    <th class="num">Output (m)</th><th class="num">Kapasitas</th><th>KET</th><th>Status</th><th></th></tr>` : `<tr>
+    <th title="Jumlah kain sekaligus: COUNT × kain = output">× Kain</th><th class="num">Output (m)</th><th class="num">Kapasitas</th><th>KET</th><th>Status</th><th></th></tr>` : `<tr>
     <th>Mesin</th><th>${fam === 'shuttle' ? 'Line' : 'Tipe'}</th><th>MO</th><th>Kain</th>
     ${fam === 'shuttle'
     ? '<th class="num">Ketik sebelum</th><th>Ketik</th><th>Sodokan</th><th>Meter</th>'
-    : '<th>Ketik prod</th><th>RPM</th><th class="num">Output (m)</th>'}
+    : '<th>Ketik prod</th><th>RPM</th><th title="Jumlah kain sekaligus: ketik prod × kain = output">× Kain</th><th class="num">Output (m)</th>'}
     <th class="num">Kapasitas</th><th>Catatan</th><th>Status</th><th></th></tr>`;
   const rows = visible();
   $('#siTable tbody').innerHTML = rows.map((m) => `<tr data-mc="${esc(m.no_mc)}">${cellsOf(m)}</tr>`).join('')
@@ -273,6 +296,12 @@ function refreshRow(no_mc) {
   tr.querySelector('.si-pct').textContent = d.pct === null ? '' : fmt.pct(d.pct);
   const out = tr.querySelector('.si-out');
   if (out) out.textContent = one(d.output);
+  const kain = tr.querySelector('.si-kain');
+  if (kain) {
+    const diff = !!m.jml_kain_mc && kainOf(m) !== m.jml_kain_mc;
+    kain.classList.toggle('is-diff', diff);
+    kain.title = diff ? `Data Mesin ×${m.jml_kain_mc}; shift ini ×${kainOf(m)}` : `Jumlah kain sekaligus (Data Mesin ×${m.jml_kain_mc ?? '?'})`;
+  }
   if (si.data.family === 'shuttle') {
     tr.querySelector('[data-f="sodokan"]').placeholder = one(d.sodokan);
     tr.querySelector('[data-f="produksi"]').placeholder = one(d.output);
@@ -376,7 +405,7 @@ $('#siTable').addEventListener('keydown', (e) => {
   e.preventDefault();
   const boxes = $$(`#siTable .si-in[data-f="${box.dataset.f}"]`).filter((x) => !x.disabled);
   const next = boxes[boxes.indexOf(box) + (e.shiftKey ? -1 : 1)];
-  if (next) { next.focus(); next.select(); }
+  if (next) { next.focus(); next.select?.(); }
 });
 
 $('#siUndo').addEventListener('click', () => {
@@ -450,7 +479,7 @@ $('#siSave').addEventListener('click', async () => {
     const m = machineOf(no_mc);
     const row = { no_mc, mo: valueOf(m, 'mo'), ketik: valueOf(m, 'ketik'), ket_bb: valueOf(m, 'ket_bb') };
     if (fam === 'shuttle') Object.assign(row, { sodokan: valueOf(m, 'sodokan'), produksi: valueOf(m, 'produksi') });
-    else row.rpm = valueOf(m, 'rpm');
+    else Object.assign(row, { rpm: valueOf(m, 'rpm'), jml_kain: valueOf(m, 'jml_kain') });
     if (fam === 'rapier') {
       for (const f of CARD) row[f] = valueOf(m, f);
       // A CMPX filled in automatically before is sent empty, so it is worked

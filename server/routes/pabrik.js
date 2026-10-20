@@ -7,6 +7,7 @@ import { query } from '../db.js';
 import { loomQuery } from '../loom-db.js';
 import { send } from '../errors.js';
 import { pricedShifts, targetPcts, n0 } from '../lib/formulas.js';
+import { byMachine } from '../lib/filters.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -39,7 +40,7 @@ async function pabrikShifts(q) {
            GREATEST(COALESCE(total_cnt,0) - COALESCE(warp_cnt,0) - COALESCE(weft_cnt,0), 0) AS other_cnt,
            GREATEST(COALESCE(total_min,0) - COALESCE(warp_min,0) - COALESCE(weft_min,0), 0) AS other_min
     FROM loom_shift ${sql}
-    ORDER BY tgl, CASE slot WHEN 'A' THEN 1 WHEN 'B' THEN 2 ELSE 3 END, loom`, params);
+    ORDER BY tgl, CASE slot WHEN 'A' THEN 1 WHEN 'B' THEN 2 ELSE 3 END, ${byMachine('loom')}`, params);
   if (!looms.length) return [];
 
   const from = looms[0].tgl;

@@ -45,11 +45,13 @@ if (role !== 'admin') { $('#targetEff').readOnly = true; $('#targetEff').tabInde
 // Everyone gets the tab for their own password; managing others stays admin.
 $('#tabUsers').hidden = false;
 $('#usersAdmin').hidden = role !== 'admin';
-// Efisiensi kain is the admin's alone; removed rather than hidden, since
-// switching family would show it again.
+// Efisiensi kain and Data Mesin are the admin's alone; removed rather than
+// hidden, since switching family would show them again.
 if (role !== 'admin') {
   $('.tab[data-tab="efisiensi"]')?.remove();
   $('#panel-efisiensi')?.remove();
+  $('.tab[data-tab="mesin"]')?.remove();
+  $('#panel-mesin')?.remove();
 }
 $('#myAccount').textContent =
   `${me.user.nama || me.user.username} · masuk sebagai ${me.user.username} · peran ${role}`;

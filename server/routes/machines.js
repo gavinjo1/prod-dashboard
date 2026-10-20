@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { query } from '../db.js';
 import { send } from '../errors.js';
-import { buildFilters } from '../lib/filters.js';
+import { buildFilters, byMachine } from '../lib/filters.js';
 import { pricedShifts } from '../lib/formulas.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
@@ -55,7 +55,7 @@ router.get('/api/machines', (req, res) => send(res, async () => {
     LEFT JOIN c ON c.no_mc = p.no_mc
     ${where}
     GROUP BY p.no_mc
-    ORDER BY ${sortCol} ${dir} NULLS LAST, p.no_mc`, params);
+    ORDER BY ${sortCol === 'machine' ? byMachine('p.no_mc', dir) : `${sortCol} ${dir} NULLS LAST, ${byMachine('p.no_mc')}`}`, params);
   res.json(rows);
 }));
 

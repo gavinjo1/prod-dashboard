@@ -6,7 +6,7 @@ import XLSX from 'xlsx';
 import { query } from '../db.js';
 import { send } from '../errors.js';
 import { requireRole } from '../auth.js';
-import { buildFilters } from '../lib/filters.js';
+import { buildFilters, byMachine } from '../lib/filters.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -75,7 +75,7 @@ async function exportRows(q) {
     FROM production p
     LEFT JOIN machine_type t ON t.type_mc = p.type_mc
     LEFT JOIN order_info o ON o.mo = p.mo AND o.as_of = p.tgl
-    ${where} ORDER BY p.tgl, p.no_mc, p.shift`, params);
+    ${where} ORDER BY p.tgl, ${byMachine('p.no_mc')}, p.shift`, params);
   return rows;
 }
 

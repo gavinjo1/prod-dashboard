@@ -88,6 +88,14 @@ async function ordersFor(mos, tgl) {
   return new Map(rows.map((r) => [r.mo, r]));
 }
 
+/** The fabrics a shift was woven with, as sent (1–4), or the machine's own when nothing was. */
+function fabricsIn(raw, fallback, no_mc) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 4) throw new AppError(`${no_mc}: jumlah kain harus 1 sampai 4, bukan "${raw}".`);
+  return n;
+}
+
 router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, async () => {
   const { family, tgl, shift } = readShift(req.query);
   const [pt, ps] = shiftBefore(tgl, shift);
@@ -123,6 +131,8 @@ router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, 
       no_mc,
       type_mc: m.type_mc, kelompok_mesin: m.kelompok_mesin,
       jml_kain: family === 'shuttle' ? 1 : m.jml_kain,
+      // What Data Mesin says, so a shift set differently (one side only) shows as such.
+      jml_kain_mc: family === 'shuttle' ? 1 : before.get(no_mc)?.jml_kain ?? m.jml_kain,
       rpm_target: family === 'shuttle' ? SHUTTLE_FIXED.rpm_target : m.rpm_target,
       width: family === 'shuttle' ? widthOf(m.type_mc) : null,
       mo: m.mo, kode_kain: m.kode_kain,
@@ -290,7 +300,9 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
         if (produksi === null) throw new AppError(`${no_mc}: isi KETIK, atau catatan kalau mesin tidak jalan.`);
         Object.assign(row, SHUTTLE_FIXED, { ketik, sodokan, produksi });
       } else {
-        const jml_kain = m.jml_kain;
+        // Fabrics woven at once: Data Mesin's, unless this shift says otherwise
+        // (one side of a two-fabric loom stood, say). Kept on the row.
+        const jml_kain = fabricsIn(raw.jml_kain, m.jml_kain, no_mc);
         if (ketik === null && ket_bb) ketik = 0;
         if (ketik === null) throw new AppError(`${no_mc}: isi KETIK, atau catatan kalau mesin tidak jalan.`);
         produksi = ketik === 0 ? 0 : outputFromKetik(family, m.type_mc, jml_kain, order?.pick ?? null, ketik);

@@ -115,3 +115,11 @@ export const TYPE_LABEL = `COALESCE(NULLIF(concat_ws(' | ', t.band, t.descriptio
 
 /** A calendar date as the API takes it. */
 export const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Machine numbers in the order people read them: A1, A2 … A9, A10, not A1,
+ * A10, A11, A2. The letters first, then the number as a number. `dir` is
+ * ASC or DESC.
+ */
+export const byMachine = (col, dir = 'ASC') =>
+  `regexp_replace(${col}, '[0-9]+', '', 'g') ${dir}, NULLIF(regexp_replace(${col}, '[^0-9]', '', 'g'), '')::int ${dir}, ${col} ${dir}`;

@@ -8,6 +8,7 @@ import { pool, query } from '../db.js';
 import { send, AppError } from '../errors.js';
 import { requireRole } from '../auth.js';
 import { MASTER_FIELDS, readMasterProduct } from '../importer/master.js';
+import { byMachine } from '../lib/filters.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -112,7 +113,7 @@ async function differingRuns(db, mo) {
            array_agg(DISTINCT CASE WHEN source_file = 'manual entry' THEN 'diketik di dashboard'
                                    ELSE coalesce(source_file, '—') END) AS sources
     FROM r GROUP BY family, no_mc, kode, pick_used, accepted, run
-    ORDER BY family, no_mc, first`, [mo]);
+    ORDER BY family, ${byMachine('no_mc')}, first`, [mo]);
   return rows;
 }
 

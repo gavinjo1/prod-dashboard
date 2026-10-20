@@ -93,3 +93,8 @@
 .si-act .si-del { color: var(--critical); }
 /* The date hint is for typing; a locked row has nothing to type. */
 .si-in:disabled[placeholder="dd/mm/yy"]::placeholder { color: transparent; }
+
+/* ×1 / ×2 fabrics per loom; marked when the shift differs from Data Mesin. */
+.si-kain { width: 52px; height: 26px; font: inherit; font-size: 12.5px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface); }
+.si-kain.is-diff { border-color: var(--warning); background: #fff8e8; color: #8a5300; font-weight: 600; }
+.si-kain:disabled { background: transparent; border-color: transparent; color: var(--ink-2); -webkit-appearance: none; appearance: none; }

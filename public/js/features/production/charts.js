@@ -5,7 +5,7 @@ import { $, $$ } from '../../core/dom.js';
 import { Q_PERIOD } from '../../core/periods.js';
 import { api, isCurrent, state, takeTicket } from '../../core/state.js';
 import { barChart } from '../../charts/bars.js';
-import { daysIn, fridayOf, isoPlus, todayIso } from '../../core/dates.js';
+import { daysIn } from '../../core/dates.js';
 import { fmt } from '../../charts/core.js';
 import { multiLineChart } from '../../charts/line.js';
 import { renderEffCards } from './effcards.js';
@@ -16,14 +16,21 @@ import { FAMILY_LABEL } from '../family.js';
  * The breakdown cards' own time range, counted back from the last day of the
  * main filter rather than from the calendar: the daily report arrives a week
  * or two late, so "today" by the clock would nearly always be empty.
+ * "1 bulan" is the calendar month that day falls in — October, not the 30
+ * days before it — and no range starts before the filter does.
  */
-export const RANGE_DAYS = { day: 1, 7: 7, month: 30 };
+export const RANGE_DAYS = { day: 1, 7: 7 };
 export function rangeFor(key) {
   const end = state.to;
   if (!end) return {};
-  const d = new Date(`${end}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - ((RANGE_DAYS[key] ?? 30) - 1));
-  return { from: d.toISOString().slice(0, 10), to: end };
+  let from = `${end.slice(0, 7)}-01`;
+  if (key !== 'month') {
+    const d = new Date(`${end}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - ((RANGE_DAYS[key] ?? 1) - 1));
+    from = d.toISOString().slice(0, 10);
+  }
+  if (state.from && from < state.from) from = state.from;
+  return { from, to: end };
 }
 // Non-breaking inside each date, so a narrow card wraps at the dash and never
 // leaves "Sep" alone on the next line.
@@ -48,28 +55,6 @@ export function withTargets(trend) {
     pct,
     target: Number(d.at_target_rpm || 0) * (pct / 100) + Number(d.target_as_is || 0)
   }));
-}
-
-/**
- * The days a week, month or year view covers. The daily view follows the
- * filter exactly; the others count back from its end date — eight weeks,
- * twelve months, every year — so a filter of 20–22 Sep shows that week among
- * the weeks before it, rather than one three-day week on its own.
- * Each window runs to the end of the period holding the end date.
- */
-export const TREND_BACK = { week: 8, month: 12 };
-export function trendWindow(period) {
-  const to = state.to || todayIso();
-  if (period === 'week') {
-    const fri = fridayOf(to);
-    return { from: isoPlus(fri, -7 * (TREND_BACK.week - 1)), to: isoPlus(fri, 6) };
-  }
-  if (period === 'month') {
-    const [y, m] = to.split('-').map(Number);
-    const first = new Date(Date.UTC(y, m - TREND_BACK.month, 1)).toISOString().slice(0, 10);
-    return { from: first, to: `${to.slice(0, 7)}-${String(daysIn(to.slice(0, 7))).padStart(2, '0')}` };
-  }
-  return { from: '', to: `${to.slice(0, 4)}-12-31` };
 }
 
 /** Days summed into the same weeks (Friday to Thursday), months and years as Kualitas. */
@@ -125,20 +110,10 @@ export async function paintTrend() {
   // ordinary days, and a day still being typed in read as a collapse.
   const fullShifts = byDay ? Math.max(0, ...rows.map((d) => d.shifts || 0)) : 0;
   const dayPartial = (d) => byDay && !d.missing && d.shifts < fullShifts * 0.9;
-  if (byDay) rows = withMissingDays(rows);
-  if (!byDay) {
-    const ticket = takeTicket('trendPeriod');
-    const win = trendWindow(period);
-    const trend = await api('trend', win);
-    if (!isCurrent('trendPeriod', ticket) || state.trendPeriod !== period) return;
-    rows = trendPeriods(withTargets(trend), period);
-  }
-
-  // The periods the filter itself falls in, marked so they stand out among
-  // the ones before; and those the data only partly covers, drawn hollow.
-  const lo = state.from && P.key(state.from);
-  const hi = state.to && P.key(state.to);
-  const inFilter = (d) => !byDay && lo && d.date >= lo && d.date <= hi;
+  // Every view covers the filter's dates exactly — 10 Sep – 10 Okt stays
+  // 10 Sep – 10 Okt; the buttons only change how the days are grouped. A
+  // week or month the dates only partly cover is drawn hollow.
+  rows = byDay ? withMissingDays(rows) : trendPeriods(rows, period);
   const partial = (d) => (byDay ? dayPartial(d) : d.days < periodDays(period, d.date));
 
   // Under the two lines: how far off, and the efficiency — output against
@@ -164,7 +139,6 @@ export async function paintTrend() {
     unit: ' m',
     label: (d) => (byDay ? fmt.day(d.date) : P.label(d.date, d)),
     title: (d) => (byDay ? fmt.day(d.date) : P.long(d.date, d)),
-    highlight: inFilter,
     hollow: partial,
     tipExtra: tipRows,
     keepEmpty: byDay
@@ -174,15 +148,12 @@ export async function paintTrend() {
   const counted = rows.filter((d) => !d.missing && !partial(d));
   const short = counted.filter((d) => Number(d.produksi) < d.target).length;
   const missing = rows.filter((d) => d.missing).length;
-  const lead = byDay ? ''
-    : period === 'year' ? `Semua tahun s.d. ${fmt.day(state.to || todayIso())} · `
-    : `${TREND_BACK[period]} ${TREND_UNIT[period]} terakhir s.d. ${fmt.day(state.to || todayIso())}${
-      rows.length < TREND_BACK[period] ? ` (data baru ada ${rows.length} ${TREND_UNIT[period]})` : ''} · `;
+  const lead = state.from && state.to ? `${fmt.day(state.from)} – ${fmt.day(state.to)} · ` : '';
   $('#chartTrendNote').textContent = rows.length
-    ? `${lead}${fmt.int(short)} dari ${fmt.int(counted.length)} ${TREND_UNIT[period]} di bawah target` +
+    ? `${lead}${counted.length ? `${fmt.int(short)} dari ${fmt.int(counted.length)} ${TREND_UNIT[period]} penuh di bawah target`
+      : `belum ada ${TREND_UNIT[period]} yang penuh di rentang ini`}` +
       (rows.some(partial) ? ' · titik berlubang: belum penuh' : '') +
-      (missing ? ` · ${fmt.int(missing)} hari tanpa data: garis terputus` : '') +
-      (rows.some(inFilter) ? ' · latar biru: periode filter' : '')
+      (missing ? ` · ${fmt.int(missing)} hari tanpa data: garis terputus` : '')
     : '';
 }
 
