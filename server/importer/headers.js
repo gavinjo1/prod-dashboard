@@ -59,22 +59,29 @@ export const ORDER_FIELDS = {
  * converted through the fabric's table — that is the output. BLOK is the line
  * number (the first of two BLOK columns), MC the loom width, 75 or 56.
  * No "MC" alias for the machine: here MC is the width.
+ *
+ * UJM's SODOKAN PER SHIFT (DATA BASE sheet) measures the roll instead: SODOKAN
+ * is the roll's reading in cm, CUT OFF the reading a shift started from, and
+ * MT / SHIFT the metres. It names the loom NO MC 2 ("50B": number and block),
+ * the shift SHIFT HTG and the type TYPE MC (56, 75, 562, 752). Its PROD is an
+ * efficiency ratio, not metres, so it is not read. KETIK is no longer read.
  */
 export const SHUTTLE_FIELDS = {
-  tgl:       ['TGL', 'TANGGAL', 'DATE'],
+  tgl:        ['TGL', 'TANGGAL', 'DATE'],
   // "SHIFT MASUK" since the October 2026 workbook, which names the shift
   // PAGI / SIANG / MALAM instead of A / B / C (see buildShuttleRows).
-  shift:     ['SHIFT', 'SHIFTMASUK', 'REGU'],
-  no_mc:     ['NOMC', 'NOMESIN', 'NOMORMESIN'],
-  mo:        ['MO', 'NOMO'],
-  kode_kain: ['KODEKAIN', 'KODE'],
-  pick:      ['PICK'],
-  counter:   ['KETIK'],
-  sodokan:   ['SODOKAN'],
-  produksi:  ['METER'],
-  line:      ['BLOK', 'LINE'],
-  width:     ['MC'],
-  ket_bb:    ['KET', 'KETERANGAN']
+  shift:      ['SHIFT', 'SHIFTMASUK', 'SHIFTHTG', 'REGU'],
+  no_mc:      ['NOMC2', 'NOMC', 'NOMESIN', 'NOMORMESIN'],
+  mo:         ['MO', 'NOMO'],
+  kode_kain:  ['KODEKAIN', 'KODE'],
+  pick:       ['PICK'],
+  sodokan:    ['SODOKAN'],
+  cut_off:    ['CUTOFF'],
+  produksi:   ['METER', 'MTSHIFT'],
+  rpm_target: ['RPM'],
+  line:       ['BLOK', 'LINE'],
+  width:      ['MC', 'TYPEMC'],
+  ket_bb:     ['KET', 'KETERANGAN']
 };
 
 /** The shuttle order list: PKN is the pick, QTY the order quantity. */

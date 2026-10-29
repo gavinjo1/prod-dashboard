@@ -54,7 +54,7 @@ router.post('/api/import', requireRole('operator'), upload.single('file'), (req,
  * ------------------------------------------------------------------ */
 
 const PRODUCTION_FIELDS = ['mo', 'kode_kain', 'type_mc', 'kelompok_mesin', 'jml_kain', 'rpm', 'rpm_target',
-  'hit_rpm', 'produksi', 'ketik_rpm', 'ketik_prod', 'ket_bb', 'ketik', 'sodokan'];
+  'hit_rpm', 'produksi', 'ketik_rpm', 'ketik_prod', 'ket_bb', 'ketik', 'sodokan', 'sodokan_awal'];
 
 router.get('/api/import/conflicts', requireRole('operator'), (req, res) => send(res, async () => {
   const status = ['open', 'kept', 'replaced'].includes(req.query.status) ? req.query.status : 'open';

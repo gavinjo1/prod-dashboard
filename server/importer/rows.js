@@ -3,6 +3,7 @@
  */
 import { toDate, toNum, toText } from './values.js';
 import { AppError } from '../errors.js';
+import { shuttleRpm } from '../lib/machine-types.js';
 
 /* ------------------------------------------------------------------ *
  * Import
@@ -10,14 +11,14 @@ import { AppError } from '../errors.js';
 
 export const PROD_COLS = ['family', 'tgl', 'shift', 'no_mc', 'mo', 'kode_kain', 'type_mc', 'kelompok_mesin',
   'jml_kain', 'rpm', 'rpm_target', 'hit_rpm', 'produksi', 'ketik_rpm', 'ketik_prod', 'ket_bb',
-  'ketik', 'sodokan'];
+  'ketik', 'sodokan', 'sodokan_awal'];
 export const PROD_NUM = new Set(['jml_kain', 'rpm', 'rpm_target', 'hit_rpm', 'produksi', 'ketik_rpm', 'ketik_prod',
-  'ketik', 'sodokan']);
+  'ketik', 'sodokan', 'sodokan_awal']);
 
 /**
- * The shuttle sheet prices every loom at 165 RPM, one width at a time:
- * PROD 100% = 165 × 60 × 24 × 2,54 ÷ (pick × 100) a day. Stored as RPM target
- * and widths, the dashboard's own target formula gives the same figure.
+ * The older shuttle sheet priced every loom at 165 RPM, one width at a time:
+ * PROD 100% = 165 × 60 × 24 × 2,54 ÷ (pick × 100) a day. UJM's prices each
+ * type (shuttleRpm in lib/machine-types.js); this stays for a type neither knows.
  */
 export const SHUTTLE_RPM = 165;
 
@@ -69,35 +70,61 @@ function buildShuttleRows({ headerRow, map, rows }) {
       kelompok_mesin: line ? `LINE ${line}` : null,
       jml_kain: 1,
       rpm: null,
-      rpm_target: SHUTTLE_RPM,
+      rpm_target: toNum(at(raw, 'rpm_target')) || shuttleRpm(width ? `SHUTTLE ${width}` : null),
       hit_rpm: null,
       produksi: toNum(at(raw, 'produksi')),
       ketik_rpm: null,
       ketik_prod: null,
       ket_bb: toText(at(raw, 'ket_bb')),
-      ketik: toNum(at(raw, 'counter')),
+      ketik: null,
       sodokan: toNum(at(raw, 'sodokan')),
+      // A CUT OFF is the reading the shift started from; blank, the loom's last one.
+      sodokan_awal: toNum(at(raw, 'cut_off')),
       pick: toNum(at(raw, 'pick'))
     });
   }
+  chainShuttle(out);
   return { records: out, saldo: [], skipped };
 }
 
 /**
- * Shifts whose SODOKAN converted to no METER — the fabric and loom width have
- * no line in the workbook's SODOKAN table, and Excel's lookup quietly returns
- * 0. Said out loud, grouped by what is missing, so the table can be completed.
+ * Each row's start reading where the sheet gives none: the loom's reading the
+ * shift before in the same file, or 0 when the loom went on to another fabric
+ * (a new roll). A loom's first row in the file keeps none. A shift listed
+ * twice chains from its bottom row, the one the import keeps.
+ */
+export function chainShuttle(records) {
+  const order = { A: 0, B: 1, C: 2 };
+  const kept = new Map(records.map((r) => [`${r.no_mc}|${r.tgl}|${r.shift}`, r]));
+  const sorted = [...kept.values()].sort((a, b) => a.no_mc.localeCompare(b.no_mc)
+    || a.tgl.localeCompare(b.tgl) || (order[a.shift] ?? 9) - (order[b.shift] ?? 9));
+  const last = new Map();
+  for (const r of sorted) {
+    if (r.sodokan === null) { r.sodokan_awal = null; continue; }
+    const p = last.get(r.no_mc);
+    if (r.sodokan_awal === null && p) {
+      const same = !(r.kode_kain && p.kode_kain && r.kode_kain !== p.kode_kain);
+      r.sodokan_awal = same ? p.sodokan : 0;
+    }
+    last.set(r.no_mc, r);
+  }
+}
+
+/**
+ * Shifts with a SODOKAN but no METER — the fabric has no such reading in the
+ * workbook's SODOKAN table, and its lookup gives #N/A. Said out loud, grouped
+ * by what is missing, so the table can be completed.
  */
 export function shuttleGaps(records) {
   const gaps = new Map();
   for (const r of records) {
-    if (!(r.sodokan > 0) || r.produksi > 0) continue;
+    if (r.sodokan === null || r.produksi !== null) continue;
     const k = `${r.kode_kain ?? '?'} / ${r.type_mc?.replace('SHUTTLE ', 'MC ') ?? '?'}`;
     gaps.set(k, (gaps.get(k) ?? 0) + 1);
   }
   if (!gaps.size) return null;
   const n = [...gaps.values()].reduce((a, b) => a + b, 0);
-  return `${n} shift ada sodokannya tapi METER 0 — tabel SODOKAN di Excel belum lengkap untuk: ` +
+  return `${n} shift ada sodokannya tapi METER kosong (#N/A) — tabel SODOKAN di Excel belum lengkap untuk: ` +
     [...gaps.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} (${v})`).join(', ') + '.';
 }
 

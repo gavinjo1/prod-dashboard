@@ -1,11 +1,11 @@
 /**
  * Production tab: headline numbers, the daily trend against target,
- * efficiency by type and machine, breakdowns and stoppage reasons.
+ * efficiency by type and machine, breakdowns, machines running and stoppage reasons.
  */
 import { Router } from 'express';
 import { query } from '../db.js';
 import { send } from '../errors.js';
-import { buildFilters, gradeWhere, whereFrom, TYPE_LABEL } from '../lib/filters.js';
+import { ISO_DAY, buildFilters, gradeWhere, whereFrom, TYPE_LABEL } from '../lib/filters.js';
 import { pricedShifts } from '../lib/formulas.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
@@ -209,6 +209,41 @@ router.get('/api/breakdown/:dim', (req, res) => send(res, async () => {
 /* ------------------------------------------------------------------ *
  * Stoppages and quality
  * ------------------------------------------------------------------ */
+
+/**
+ * How many looms ran on one day, shift by shift: the day picked (`to`), else
+ * the last day with metres — a day whose rows are there but not yet filled in
+ * (Shuttle with no SODOKAN) is not "inputted". A loom ran when its shift wove
+ * something; a row with 0 m (a note, a stop) or no metres did not. Counted
+ * against the looms entered that day, not Data Mesin, which keeps every loom
+ * an import ever named.
+ */
+router.get('/api/running', (req, res) => send(res, async () => {
+  const dims = buildFilters(req.query, { dates: false });
+  const where = dims.clauses.join(' AND ');
+  let day = ISO_DAY.test(String(req.query.to ?? '')) ? String(req.query.to) : null;
+  const chosen = !!day;
+  if (!day) {
+    const { rows: [r] } = await query(
+      `SELECT max(tgl)::text AS d FROM production WHERE ${where} AND produksi IS NOT NULL`, dims.params);
+    day = r.d;
+  }
+  if (!day) return res.json({ tgl: null, chosen, running: 0, entered: 0, shifts: [] });
+  const at = dims.params.length + 1;
+  const { rows: shifts } = await query(`
+    SELECT shift AS label,
+           count(DISTINCT no_mc) FILTER (WHERE produksi > 0)::int AS running,
+           count(DISTINCT no_mc) FILTER (WHERE NOT COALESCE(produksi > 0, false))::int AS stopped,
+           count(DISTINCT no_mc)::int AS entered,
+           COALESCE(sum(produksi), 0) AS produksi
+    FROM production WHERE ${where} AND tgl = $${at}
+    GROUP BY shift ORDER BY shift`, [...dims.params, day]);
+  const { rows: [all] } = await query(`
+    SELECT count(DISTINCT no_mc) FILTER (WHERE produksi > 0)::int AS running,
+           count(DISTINCT no_mc)::int AS entered
+    FROM production WHERE ${where} AND tgl = $${at}`, [...dims.params, day]);
+  res.json({ tgl: day, chosen, running: all.running, entered: all.entered, shifts });
+}));
 
 router.get('/api/stoppages', (req, res) => send(res, async () => {
   const { sql, params } = whereFrom(req.query);

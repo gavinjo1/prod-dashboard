@@ -8,6 +8,7 @@ import { send, AppError } from '../errors.js';
 import { requireRole } from '../auth.js';
 import { FAMILIES } from '../importer/index.js';
 import { MACHINE_TYPES, formOf, outputOf } from '../lib/machine-types.js';
+import { sodokanTables } from '../lib/shift-entry.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -111,11 +112,6 @@ router.put('/api/machine-registry', requireRole('admin'), (req, res) => send(res
  * written by the check; re-working rows is the separate, logged step below.
  * ------------------------------------------------------------------ */
 
-async function sodokanTables() {
-  const { rows } = await query(`SELECT kode_kain, width, cm, meter FROM shuttle_sodokan`);
-  return new Map(rows.map((r) => [`${r.kode_kain}|${r.width}|${Number(r.cm)}`, Number(r.meter)]));
-}
-
 function rangeOf(q, params) {
   const where = [];
   if (ISO.test(String(q.from))) { params.push(q.from); where.push(`tgl >= $${params.length}`); }
@@ -130,7 +126,7 @@ async function checkRows(db, family, q) {
   const range = rangeOf(q, params);
   const { rows } = await db.query(`
     SELECT id, family, tgl::text AS tgl, shift, no_mc, type_mc, kode_kain, jml_kain, pick_used,
-           ketik_prod, sodokan, produksi, calc
+           ketik_prod, sodokan, sodokan_awal, produksi, calc
     FROM production WHERE family = $1 ${range}`, params);
   const tables = family === 'shuttle' ? await sodokanTables() : null;
   return rows.map((r) => ({ ...r, formula: outputOf(r, tables) }));

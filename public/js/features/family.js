@@ -47,7 +47,7 @@ export async function chooseFamily(family) {
   // range differs too — so the filters are rebuilt rather than carried over.
   state.shift = []; state.jam = []; state.group = [];
   state.type = []; state.machine = []; state.fabric = []; state.mo = [];
-  state.from = ''; state.to = '';
+  state.from = ''; state.to = ''; state.toPicked = false;
   applyFamily(family);
   await loadFilters();
   $$('.picker').forEach((p) => p._sync?.());

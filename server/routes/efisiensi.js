@@ -98,7 +98,7 @@ router.get('/api/efisiensi-kain', requireRole('admin'), (req, res) => send(res, 
   for (const s of shifts) {
     if (!s.priced) { unpriced++; continue; }
     // Counted at 0 m, as the Produksi tab counts them; said in the note.
-    if (Number(s.sodokan) > 0 && !(Number(s.produksi) > 0)) noMeter++;
+    if (s.sodokan !== null && s.produksi === null) noMeter++;
     const ne = neOf(s.kode_kain);
     const g = byNe.get(ne) ?? { days: new Map(), fabrics: new Map() };
     const f = g.fabrics.get(s.kode_kain) ?? new Map();

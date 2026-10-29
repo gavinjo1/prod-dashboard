@@ -165,7 +165,7 @@ export async function loadEfisiensi() {
   $('#effSub').textContent = 'Efisiensi = hasil mesin ÷ PROD 100%, sama dengan tab Produksi';
   const notes = [];
   if (g.unpriced) notes.push(`${fmt.int(g.unpriced)} shift tanpa pick atau RPM target tidak dihitung.`);
-  if (g.no_meter) notes.push(`${fmt.int(g.no_meter)} shift ada sodokannya tapi METER 0 (tabel SODOKAN belum lengkap), dihitung 0 m seperti di tab Produksi.`);
+  if (g.no_meter) notes.push(`${fmt.int(g.no_meter)} shift ada sodokannya tapi METER kosong (tabel SODOKAN belum lengkap), dihitung 0 m seperti di tab Produksi.`);
   const ungrouped = g.groups.find((x) => x.ungrouped);
   if (ungrouped) notes.push(`${fmt.int(ungrouped.fabrics.length)} kode kain belum punya grup NE.`);
   $('#effNote').textContent = notes.join(' ');

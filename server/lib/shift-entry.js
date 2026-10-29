@@ -4,7 +4,6 @@
  * table, so a shift entered either way reads the same as an imported one.
  */
 import { query } from '../db.js';
-import { SHUTTLE_RPM } from '../importer/rows.js';
 
 /** The shift before this one: B follows A, C follows B, A the night before's C. */
 export function shiftBefore(tgl, shift) {
@@ -24,14 +23,6 @@ export function shiftAfter(tgl, shift) {
   return [d.toISOString().slice(0, 10), 'A'];
 }
 
-/**
- * SODOKAN is the counter's advance over the shift. A reading below the one
- * before means the counter was reset, and the reading itself is the advance.
- * Rounded to 2 places, as the daily sheets round it before the lookup.
- */
-export const sodokanOf = (ketik, before) =>
-  Math.round((before <= ketik ? ketik - before : ketik) * 100) / 100;
-
 /** Loom width from the type: "SHUTTLE 75" is 75. */
 export const widthOf = (type_mc) => Number(/(\d+)\s*$/.exec(type_mc ?? '')?.[1]) || null;
 
@@ -49,27 +40,39 @@ export function outputFromKetik(family, type_mc, jml_kain, pick, ketik) {
   return jml_kain > 0 ? ketik * jml_kain : null;
 }
 
-/** The counter reading the shift before ended on; ketik is null when none was kept. */
-export async function ketikBefore(no_mc, tgl, shift) {
-  const [t, s] = shiftBefore(tgl, shift);
-  const { rows: [r] } = await query(`
-    SELECT ketik FROM production
-    WHERE family = 'shuttle' AND no_mc = $1 AND tgl = $2 AND shift = $3 AND ketik IS NOT NULL`,
-  [no_mc, t, s]);
-  return { tgl: t, shift: s, ketik: r ? Number(r.ketik) : null };
+/**
+ * Each shuttle loom's last SODOKAN before this shift (or up to and including
+ * it), whichever shift it was read on: a shift the loom stood with only a
+ * note has none, and the reading before it carries on. `db` is the pool's
+ * query or a transaction's client.
+ */
+export async function lastReadings(db, tgl, shift, inclusive = false) {
+  const { rows } = await db.query(`
+    SELECT DISTINCT ON (no_mc) no_mc, sodokan::float8 AS sodokan, kode_kain, tgl::text AS tgl, shift
+    FROM production
+    WHERE family = 'shuttle' AND sodokan IS NOT NULL AND (tgl, shift) ${inclusive ? '<=' : '<'} ($1::date, $2)
+    ORDER BY no_mc, tgl DESC, shift DESC`, [tgl, shift]);
+  return new Map(rows.map((r) => [r.no_mc, r]));
 }
 
-/** METER for a SODOKAN from the workbook's table, or null when it has no line. */
-export async function meterOf(kode_kain, width, sodokan) {
-  if (sodokan === 0) return 0;
-  const { rows: [r] } = await query(`
-    SELECT meter FROM shuttle_sodokan
-    WHERE kode_kain = $1 AND width = $2 AND cm = round($3::numeric, 2)`, [kode_kain, width, sodokan]);
-  return r ? Number(r.meter) : null;
+/**
+ * Where a shift's reading starts: the loom's last one, or 0 when the loom has
+ * since gone on to another fabric — a new roll. null when it has no reading yet.
+ */
+export function awalOf(last, kode_kain) {
+  if (!last) return null;
+  if (kode_kain && last.kode_kain && last.kode_kain !== kode_kain) return 0;
+  return Number(last.sodokan);
 }
 
-/** As every imported shuttle row: one fabric, the shed's fixed RPM, no RPM reading. */
-export const SHUTTLE_FIXED = { jml_kain: 1, rpm: null, rpm_target: SHUTTLE_RPM };
+/** The SODOKAN table as a Map "kode|width|cm" → metres on the roll. */
+export async function sodokanTables(db = { query }) {
+  const { rows } = await db.query(`SELECT kode_kain, width, cm, meter FROM shuttle_sodokan`);
+  return new Map(rows.map((r) => [`${r.kode_kain}|${r.width}|${Number(r.cm)}`, Number(r.meter)]));
+}
+
+/** As every imported shuttle row: one fabric, no RPM or counter reading. */
+export const SHUTTLE_FIXED = { jml_kain: 1, rpm: null, ketik: null };
 
 /**
  * Writes one machine-shift, replacing what was there. `db` is the pool's
@@ -89,8 +92,8 @@ export async function upsertProduction(db, r) {
     INSERT INTO production
       (tgl, shift, no_mc, mo, kode_kain, type_mc, kelompok_mesin, jml_kain,
        rpm, rpm_target, hit_rpm, produksi, ketik_rpm, ketik_prod, ket_bb, source_file,
-       jam_mulai, jam_selesai, edited_by, family, ketik, sodokan, pick_used, manual, calc)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$13,$14,'manual entry',$15,$16,$17,$18,$19,$20,$21,true,$22)
+       jam_mulai, jam_selesai, edited_by, family, ketik, sodokan, pick_used, manual, calc, sodokan_awal)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$9,$13,$14,'manual entry',$15,$16,$17,$18,$19,$20,$21,true,$22,$23)
     ON CONFLICT (family, tgl, shift, no_mc) DO UPDATE SET
       mo = EXCLUDED.mo, kode_kain = EXCLUDED.kode_kain, type_mc = EXCLUDED.type_mc,
       kelompok_mesin = EXCLUDED.kelompok_mesin, jml_kain = EXCLUDED.jml_kain,
@@ -99,6 +102,7 @@ export async function upsertProduction(db, r) {
       ketik_prod = EXCLUDED.ketik_prod, ket_bb = EXCLUDED.ket_bb,
       jam_mulai = EXCLUDED.jam_mulai, jam_selesai = EXCLUDED.jam_selesai,
       edited_by = EXCLUDED.edited_by, ketik = EXCLUDED.ketik, sodokan = EXCLUDED.sodokan,
+      sodokan_awal = EXCLUDED.sodokan_awal,
       pick_used = EXCLUDED.pick_used, manual = true, calc = EXCLUDED.calc,
       source_file = 'manual entry', imported_at = now()
     RETURNING (xmax = 0) AS inserted, tgl::text, shift, no_mc, produksi, ketik, sodokan, edited_by,
@@ -108,6 +112,6 @@ export async function upsertProduction(db, r) {
     r.kelompok_mesin || null, jml, r.rpm ?? null, r.rpm_target ?? null, hit_rpm, r.produksi ?? null,
     ketik_prod, (r.ket_bb || '').trim() || null, r.jam_mulai ?? null, r.jam_selesai ?? null,
     r.edited_by ?? null, r.family, r.ketik ?? null, r.sodokan ?? null, r.pick_used ?? null,
-    r.calc ?? `${r.family}-1`]);
+    r.calc ?? `${r.family}-1`, r.sodokan_awal ?? null]);
   return { ...row, ketik_prod, hit_rpm };
 }

@@ -10,12 +10,12 @@ import { send, AppError } from '../errors.js';
 import { requireRole } from '../auth.js';
 import { FAMILIES } from '../importer/index.js';
 import {
-  SHUTTLE_FIXED, outputFromKetik, shiftAfter, shiftBefore, sodokanOf, upsertProduction, widthOf
+  SHUTTLE_FIXED, awalOf, lastReadings, outputFromKetik, shiftBefore, sodokanTables, upsertProduction, widthOf
 } from '../lib/shift-entry.js';
 import {
   CARD_FIELDS, beamsOn, checkBeam, checkCard, removeCard, writeBeam, writeCard
 } from '../lib/loom-card.js';
-import { formOf, readField, typeOf } from '../lib/machine-types.js';
+import { formOf, readField, rollMeter, shuttleOutput, shuttleRpm, typeOf } from '../lib/machine-types.js';
 
 // Case-sensitive like the app itself: see the note in index.js.
 export const router = Router({ caseSensitive: true });
@@ -27,7 +27,7 @@ export const router = Router({ caseSensitive: true });
  *   Rapier   the EFFISIENSI RAPIER columns: RPM, EFF, PL, CMPX, PP, CMPX,
  *            COUNT (the counter), KET                    → as AJL; SULZER from picks
  *            and the beam on the loom (No. Beam … KET), see lib/loom-card.js
- *   Shuttle  KETIK (counter reading), note               → SODOKAN → METER (table)
+ *   Shuttle  SODOKAN (roll reading, cm), note            → METER = MT(SODOKAN) − MT(SODOKAN awal)
  *
  * The order (MO) carries over from the shift before and is changed only when
  * a beam is. Machine type, group, fabrics woven at once and target RPM come
@@ -102,7 +102,7 @@ router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, 
   const [before, { rows: saved }, { rows: prev }, { rows: recentMos }] = await Promise.all([
     machinesBefore(family, tgl, shift),
     query(`SELECT no_mc, mo, kode_kain, type_mc, kelompok_mesin, jml_kain, rpm_target, rpm, produksi,
-                  ketik_prod, ketik, sodokan, ket_bb, edited_by, source_file
+                  ketik_prod, ketik, sodokan, sodokan_awal, calc, ket_bb, edited_by, source_file
            FROM production WHERE family = $1 AND tgl = $2 AND shift = $3`, [family, tgl, shift]),
     query(`SELECT no_mc, ketik, ketik_prod, rpm, produksi
            FROM production WHERE family = $1 AND tgl = $2 AND shift = $3`, [family, pt, ps]),
@@ -115,7 +115,8 @@ router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, 
            ) x GROUP BY mo ORDER BY mo`, [family, tgl])
   ]);
   const savedBy = new Map(saved.map((r) => [r.no_mc, r]));
-  const prevBy = new Map(prev.map((r) => [r.no_mc, r]));
+  // Shuttle chains from the loom's last reading, however many shifts back.
+  const prevBy = family === 'shuttle' ? await lastReadings({ query }, tgl, shift) : new Map(prev.map((r) => [r.no_mc, r]));
   // Rapier: the loom display's readings for the shift, and the beam on each loom.
   const [cards, beams] = family === 'rapier' ? await Promise.all([
     query(`SELECT no_mc, eff, pl, cmpx_pl, pp, cmpx_pp FROM loom_card
@@ -133,7 +134,7 @@ router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, 
       jml_kain: family === 'shuttle' ? 1 : m.jml_kain,
       // What Data Mesin says, so a shift set differently (one side only) shows as such.
       jml_kain_mc: family === 'shuttle' ? 1 : before.get(no_mc)?.jml_kain ?? m.jml_kain,
-      rpm_target: family === 'shuttle' ? SHUTTLE_FIXED.rpm_target : m.rpm_target,
+      rpm_target: family === 'shuttle' ? shuttleRpm(m.type_mc, m.rpm_target) : m.rpm_target,
       width: family === 'shuttle' ? widthOf(m.type_mc) : null,
       mo: m.mo, kode_kain: m.kode_kain,
       prev: prevBy.get(no_mc) ?? null,
@@ -146,13 +147,9 @@ router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, 
 
   const orders = await ordersFor([...new Set([...machines.map((m) => m.mo), ...recentMos.map((r) => r.mo)].filter(Boolean))], tgl);
 
-  // Shuttle: the SODOKAN table for every fabric and width on the shift, so
-  // the page can show METER as the counter is typed.
-  let sodokan = {};
-  if (family === 'shuttle') {
-    const { rows } = await query(`SELECT kode_kain, width, cm, meter FROM shuttle_sodokan ORDER BY cm`);
-    for (const r of rows) (sodokan[`${r.kode_kain}|${r.width}`] ??= []).push([Number(r.cm), Number(r.meter)]);
-  }
+  // Shuttle: the SODOKAN table, "kode|width|cm" → metres on the roll (width 0
+  // is every width), so the page can show METER as the reading is typed.
+  const sodokan = family === 'shuttle' ? Object.fromEntries(await sodokanTables()) : {};
 
   res.json({
     family, tgl, shift, prev_shift: { tgl: pt, shift: ps },
@@ -167,52 +164,62 @@ router.get('/api/input-shift', requireRole('operator'), (req, res) => send(res, 
 
 /* ---- saving a shift ---- */
 
+/** A SODOKAN reading as the mill writes it: 1,5. */
+const cmText = (v) => (v === null || v === undefined ? '—' : String(Number(v)).replace('.', ','));
+
 /**
- * Shuttle: a counter corrected on a saved shift changes the next shift's
- * SODOKAN too (next KETIK − this KETIK). Where the next shift is saved and
- * its SODOKAN was the one worked out from the old counter, it is worked out
- * again with its METER, and logged. Where it was typed by hand, it is left
- * and named, for someone to check. Returns what was done, loom by loom.
+ * Shuttle: a SODOKAN saved, corrected or removed on a shift moves where each
+ * loom's next reading starts. Where that next shift started from the old
+ * chained reading and its METER was worked out here, both are worked out
+ * again and logged. A start typed by hand (a cut off), or a METER from Excel
+ * or typed, is left, and named when it no longer follows. `oldLast` is
+ * lastReadings(inclusive) as it was before the change. Returns what was done.
  */
-async function rechainShuttle(db, tgl, shift, ready, saved, tables, user) {
-  const [nt, ns] = shiftAfter(tgl, shift);
-  const changed = ready.filter((r) => {
-    const was = saved.get(r.no_mc)?.ketik;
-    return was !== null && was !== undefined && r.ketik !== null && Number(was) !== Number(r.ketik);
-  });
-  if (!changed.length) return [];
-  const { rows: next } = await db.query(
-    `SELECT * FROM production WHERE family = 'shuttle' AND tgl = $1 AND shift = $2 AND no_mc = ANY($3) FOR UPDATE`,
-    [nt, ns, changed.map((r) => r.no_mc)]);
-  const nextBy = new Map(next.map((r) => [r.no_mc, r]));
+async function rechainShuttle(db, tgl, shift, names, oldLast, tables, user) {
+  const newLast = await lastReadings(db, tgl, shift, true);
+  const same = (a, b) => (a?.sodokan ?? null) === (b?.sodokan ?? null) && (a?.kode_kain ?? null) === (b?.kode_kain ?? null);
+  const moved = names.filter((n) => !same(oldLast.get(n), newLast.get(n)));
+  if (!moved.length) return [];
+  const { rows: next } = await db.query(`
+    SELECT DISTINCT ON (no_mc) * FROM production
+    WHERE family = 'shuttle' AND no_mc = ANY($1) AND sodokan IS NOT NULL AND (tgl, shift) > ($2::date, $3)
+    ORDER BY no_mc, tgl, shift`, [moved, tgl, shift]);
   const out = [];
-  for (const r of changed) {
-    const n = nextBy.get(r.no_mc);
-    if (!n || n.ketik === null) continue;
-    const oldKetik = Number(saved.get(r.no_mc).ketik);
-    const auto = sodokanOf(Number(n.ketik), oldKetik);
-    if (n.sodokan === null || Math.abs(Number(n.sodokan) - auto) > 1e-9) {
-      out.push({ no_mc: r.no_mc, tgl: nt, shift: ns, status: 'periksa',
-        message: `SODOKAN shift ${ns} ${nt} (${n.sodokan}) tidak dihitung dari ketik lama, jadi tidak diubah. Periksa.` });
+  for (const n of next) {
+    const was = awalOf(oldLast.get(n.no_mc), n.kode_kain);
+    const now = awalOf(newLast.get(n.no_mc), n.kode_kain);
+    if (was === now) continue;
+    const item = { no_mc: n.no_mc, tgl: n.tgl, shift: n.shift };
+    const start = n.sodokan_awal === null ? null : Number(n.sodokan_awal);
+    if (start !== null && now !== null && Math.abs(start - now) < 1e-9) continue;
+    if (n.calc !== 'shuttle-2') {
+      out.push({ ...item, status: 'periksa',
+        message: `METER ${n.calc === 'typed' ? 'diketik' : 'dari Excel'}, jadi tidak diubah, padahal sodokan awalnya sekarang ${cmText(now)}. Periksa.` });
       continue;
     }
-    const sodokan = sodokanOf(Number(n.ketik), Number(r.ketik));
-    const width = widthOf(n.type_mc);
-    const meter = sodokan === 0 ? 0 : tables.get(`${n.kode_kain}|${width}|${sodokan}`);
-    // As the workbook's SUMIF: no line in the table counts as 0 m, said here.
-    const produksi = meter ?? 0;
+    if (start === null || was === null || Math.abs(start - was) > 1e-9) {
+      out.push({ ...item, status: 'periksa',
+        message: `sodokan awal ${cmText(start)} diketik (cut off), jadi tidak diubah; sodokan terakhir sebelumnya sekarang ${cmText(now)}. Periksa.` });
+      continue;
+    }
+    const meter = shuttleOutput(tables, n.kode_kain, n.type_mc, Number(n.sodokan), now);
+    if (now === null || meter === null) {
+      // Never a silent 0: without a start or the table's metres the shift is left and named.
+      out.push({ ...item, status: 'periksa',
+        message: `sodokan awal jadi ${cmText(now)}, tapi METER tidak bisa dihitung (tabel SODOKAN ${n.kode_kain}). Tidak diubah; isi ulang shift itu.` });
+      continue;
+    }
     const { rows: [after] } = await db.query(`
-      UPDATE production SET sodokan = $2, produksi = $3, edited_by = $4, manual = true, calc = 'shuttle-1'
-      WHERE id = $1 RETURNING *`, [n.id, sodokan, produksi, user]);
+      UPDATE production SET sodokan_awal = $2, produksi = $3, edited_by = $4, manual = true
+      WHERE id = $1 RETURNING *`, [n.id, now, meter, user]);
     await db.query(`
       INSERT INTO edit_log (table_name, row_id, action, before_json, after_json, edited_by, reason)
       VALUES ('production', $1, 'edit', $2, $3, $4, $5)`,
     [n.id, JSON.stringify(n), JSON.stringify(after), user,
-      `ketik shift ${shift} ${tgl} dikoreksi ${oldKetik} → ${r.ketik}: sodokan dihitung ulang`]);
-    out.push({ no_mc: r.no_mc, tgl: nt, shift: ns, status: 'dihitung ulang',
-      sodokan: { before: Number(n.sodokan), after: sodokan },
-      meter: { before: n.produksi === null ? null : Number(n.produksi), after: produksi },
-      ...(meter === undefined ? { message: `tabel SODOKAN belum punya ${n.kode_kain} / MC ${width} untuk ${sodokan}; METER 0` } : {}) });
+      `sodokan shift ${shift} ${tgl} berubah: sodokan awal dihitung ulang`]);
+    out.push({ ...item, status: 'dihitung ulang',
+      awal: { before: start, after: now },
+      meter: { before: n.produksi === null ? null : Number(n.produksi), after: meter } });
   }
   return out;
 }
@@ -242,14 +249,8 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
     ...rows.map((r) => String(r.mo ?? '').trim()),
     ...[...before.values(), ...saved.values()].map((m) => m.mo)
   ].filter(Boolean))], tgl);
-  const [pt, ps] = shiftBefore(tgl, shift);
-  const { rows: prev } = await query(
-    `SELECT no_mc, ketik FROM production WHERE family = $1 AND tgl = $2 AND shift = $3`, [family, pt, ps]);
-  const prevKetik = new Map(prev.map((r) => [r.no_mc, r.ketik === null ? null : Number(r.ketik)]));
-  const tables = family === 'shuttle'
-    ? new Map((await query(`SELECT kode_kain, width, cm, meter FROM shuttle_sodokan`)).rows
-      .map((r) => [`${r.kode_kain}|${r.width}|${Number(r.cm)}`, Number(r.meter)]))
-    : null;
+  const last = family === 'shuttle' ? await lastReadings({ query }, tgl, shift) : new Map();
+  const tables = family === 'shuttle' ? await sodokanTables() : null;
 
   // Everything is checked before anything is written: a shift is saved whole
   // or not at all, and every row that cannot be is named.
@@ -270,7 +271,7 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
       const ket_bb = readField(family, 'ket_bb', raw.ket_bb, no_mc);
       let ketik = readField(family, 'ketik', raw.ketik, no_mc);
       const rpm = readField(family, 'rpm', raw.rpm, no_mc);
-      let sodokan = readField(family, 'sodokan', raw.sodokan, no_mc);
+      const sodokan = readField(family, 'sodokan', raw.sodokan, no_mc);
       let produksi = readField(family, 'produksi', raw.produksi, no_mc);
       // The pick the shift is worked out with is kept on the row, and so is
       // what produced its metres: the family's formula, or metres typed in.
@@ -280,25 +281,26 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
         calc: produksi !== null ? 'typed' : typeOf(family).calc };
 
       if (family === 'shuttle') {
-        if (sodokan === null && ketik !== null) {
-          const p = prevKetik.get(no_mc);
-          if (p === null || p === undefined) {
-            throw new AppError(`${no_mc}: KETIK shift ${ps} ${pt} belum ada, jadi SODOKAN tidak bisa dihitung. Isi SODOKAN langsung.`);
-          }
-          sodokan = sodokanOf(ketik, p);
-        }
+        let awal = readField(family, 'sodokan_awal', raw.sodokan_awal, no_mc);
+        if (sodokan === null) awal = null;
+        else if (awal === null) awal = awalOf(last.get(no_mc), kode_kain);
         if (produksi === null && sodokan !== null) {
-          const width = widthOf(m.type_mc);
+          if (awal === null) {
+            throw new AppError(`${no_mc}: belum ada SODOKAN sebelumnya untuk mesin ini. Isi Sodokan awal (0 bila gulungan baru).`);
+          }
           if (!kode_kain) throw new AppError(`${no_mc}: MO belum diisi, jadi kain dan METER tidak diketahui. Isi MO.`);
-          produksi = sodokan === 0 ? 0 : tables.get(`${kode_kain}|${width}|${Math.round(sodokan * 100) / 100}`) ?? null;
+          produksi = shuttleOutput(tables, kode_kain, m.type_mc, sodokan, awal);
           if (produksi === null) {
-            throw new AppError(`${no_mc}: tabel SODOKAN belum punya ${kode_kain ?? '(kain?)'} / MC ${width} untuk sodokan ${sodokan}. Isi METER langsung.`);
+            const width = widthOf(m.type_mc);
+            const gone = [...new Set([sodokan, awal])].filter((c) => rollMeter(tables, kode_kain, width, c) === null)
+              .map((c) => `${cmText(c)} cm`).join(' dan ');
+            throw new AppError(`${no_mc}: tabel SODOKAN ${kode_kain} tidak punya ${gone}. Periksa sodokannya, import tabel SODOKAN, atau isi Meter langsung.`);
           }
         }
         // A note alone means the loom did not run.
         if (produksi === null && ket_bb) produksi = 0;
-        if (produksi === null) throw new AppError(`${no_mc}: isi KETIK, atau catatan kalau mesin tidak jalan.`);
-        Object.assign(row, SHUTTLE_FIXED, { ketik, sodokan, produksi });
+        if (produksi === null) throw new AppError(`${no_mc}: isi SODOKAN, atau catatan kalau mesin tidak jalan.`);
+        Object.assign(row, SHUTTLE_FIXED, { rpm_target: shuttleRpm(m.type_mc, m.rpm_target), sodokan, sodokan_awal: awal, produksi });
       } else {
         // Fabrics woven at once: Data Mesin's, unless this shift says otherwise
         // (one side of a two-fabric loom stood, say). Kept on the row.
@@ -342,6 +344,7 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
   try {
     await client.query('BEGIN');
     let inserted = 0;
+    const oldLast = family === 'shuttle' ? await lastReadings(client, tgl, shift, true) : null;
     for (const row of ready) {
       if ((await upsertProduction(client, row)).inserted) inserted++;
       if (row.card) {
@@ -350,7 +353,8 @@ router.post('/api/input-shift', requireRole('operator'), (req, res) => send(res,
       }
     }
     for (const beam of beams) await writeBeam(client, family, beam, req.user);
-    const chained = family === 'shuttle' ? await rechainShuttle(client, tgl, shift, ready, saved, tables, req.user) : [];
+    const chained = family === 'shuttle'
+      ? await rechainShuttle(client, tgl, shift, ready.map((r) => r.no_mc), oldLast, tables, req.user) : [];
     await client.query('COMMIT');
     res.json({ saved: ready.length, inserted, updated: ready.length - inserted, beams: beams.length, chained });
   } catch (err) {
@@ -379,6 +383,7 @@ router.delete('/api/input-shift', requireRole('operator'), (req, res) => send(re
       `SELECT * FROM production WHERE family = $1 AND tgl = $2 AND shift = $3 AND no_mc = $4`,
       [family, tgl, shift, no_mc]);
     if (!before) throw new AppError(`${no_mc} shift ${shift} tidak ada — mungkin sudah dihapus.`, 404);
+    const oldLast = family === 'shuttle' ? await lastReadings(client, tgl, shift, true) : null;
     const { rows: [card] } = await client.query(
       `DELETE FROM loom_card WHERE family = $1 AND tgl = $2 AND shift = $3 AND no_mc = $4 RETURNING *`,
       [family, tgl, shift, no_mc]);
@@ -387,8 +392,11 @@ router.delete('/api/input-shift', requireRole('operator'), (req, res) => send(re
       `INSERT INTO edit_log (table_name, row_id, action, before_json, edited_by)
        VALUES ('production', $1, 'delete', $2, $3)`,
       [before.id, JSON.stringify(card ? { ...before, loom_card: card } : before), req.user]);
+    // Shuttle: the loom's next shift now starts from the reading before this one.
+    const chained = family === 'shuttle'
+      ? await rechainShuttle(client, tgl, shift, [no_mc], oldLast, await sodokanTables(client), req.user) : [];
     await client.query('COMMIT');
-    res.json({ ok: true, no_mc });
+    res.json({ ok: true, no_mc, chained });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -450,7 +458,7 @@ router.get('/api/input-shift/export.xlsx', requireRole('operator'), (req, res) =
   const fam = family === 'rapier'
     ? [['rpm', 'RPM'], ['eff', 'EFF %'], ['pl', 'PL'], ['cmpx_pl', 'CMPX lusi'], ['pp', 'PP'], ['cmpx_pp', 'CMPX pakan'],
       ['ketik_prod', 'COUNT']]
-    : family === 'shuttle' ? [['ketik', 'Ketik'], ['sodokan', 'Sodokan']]
+    : family === 'shuttle' ? [['sodokan_awal', 'Sodokan awal'], ['sodokan', 'Sodokan']]
       : [['ketik_prod', 'Ketik prod'], ['rpm', 'RPM']];
   const head = ['Tanggal', 'Shift', 'Jam', 'Mesin', 'Tipe', 'Kelompok', 'MO', 'Kode kain', 'Pick',
     ...(family === 'shuttle' ? [] : ['Jumlah kain']), ...fam.map(([, l]) => l),

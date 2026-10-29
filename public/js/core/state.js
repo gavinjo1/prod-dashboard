@@ -9,6 +9,8 @@ import { $ } from './dom.js';
 
 export const state = {
   from: '', to: '',
+  // Whether "to" was picked by someone, not filled in with the last date in the data.
+  toPicked: false,
   shift: [], jam: [], group: [], type: [], machine: [], fabric: [], mo: [],
   qPeriod: 'day',
   trendPeriod: 'day',

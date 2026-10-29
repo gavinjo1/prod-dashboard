@@ -71,21 +71,27 @@ export async function snapshot(client, batchId, table, records) {
 
   const cols = keyCols.join(', ');
   const types = await keyTypes(client, table, keyCols);
-  const values = [];
-  const tuples = keys.map((key, i) => {
-    values.push(...key);
-    return `(${key.map((_, c) => {
-      const ph = `$${i * keyCols.length + c + 1}`;
-      return i === 0 ? `${ph}::${types[c]}` : ph;
-    }).join(',')})`;
-  });
+  // In slices, so a long sheet stays inside Postgres's 65 535 parameters a
+  // query: 23 000 shuttle shifts × 4 key columns is well past it.
+  const rows = [];
+  for (let at = 0; at < keys.length; at += 5000) {
+    const values = [];
+    const tuples = keys.slice(at, at + 5000).map((key, i) => {
+      values.push(...key);
+      return `(${key.map((_, c) => {
+        const ph = `$${i * keyCols.length + c + 1}`;
+        return i === 0 ? `${ph}::${types[c]}` : ph;
+      }).join(',')})`;
+    });
 
-  // LEFT JOIN so keys with no existing row come back as NULL, which is what
-  // tells undo to delete rather than restore.
-  const { rows } = await client.query(`
-    WITH wanted (${cols}) AS (VALUES ${tuples.join(',')})
-    SELECT to_jsonb(w) AS key_json, to_jsonb(t) AS before_json
-    FROM wanted w LEFT JOIN ${table} t USING (${cols})`, values);
+    // LEFT JOIN so keys with no existing row come back as NULL, which is what
+    // tells undo to delete rather than restore.
+    const { rows: part } = await client.query(`
+      WITH wanted (${cols}) AS (VALUES ${tuples.join(',')})
+      SELECT to_jsonb(w) AS key_json, to_jsonb(t) AS before_json
+      FROM wanted w LEFT JOIN ${table} t USING (${cols})`, values);
+    rows.push(...part);
+  }
 
   const ins = [];
   const p = [];

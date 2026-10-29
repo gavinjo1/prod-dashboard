@@ -10,6 +10,7 @@
  */
 import { AppError } from '../errors.js';
 import { SHUTTLE_RPM } from '../importer/rows.js';
+import { widthOf } from './shift-entry.js';
 
 // A free field: a stop code (HB, BB, TY …) or anything the operator needs to say.
 const note = { key: 'ket_bb', label: 'KET', kind: 'text', maxLength: 200, required: 'no',
@@ -54,19 +55,20 @@ export const MACHINE_TYPES = {
     notApplicable: ['ketik', 'sodokan']
   },
   shuttle: {
-    family: 'shuttle', label: 'Shuttle', calc: 'shuttle-1',
-    output: 'SODOKAN = KETIK − KETIK shift sebelumnya (atau KETIK bila counter direset); METER dari tabel SODOKAN',
+    family: 'shuttle', label: 'Shuttle', calc: 'shuttle-2',
+    output: 'METER = MT(SODOKAN) − MT(SODOKAN awal) dari tabel SODOKAN kain; ' +
+      'bila minus (kain dipotong) METER = MT(SODOKAN)',
     fields: [
-      { key: 'ketik', label: 'Ketik', unit: 'counter', kind: 'number', min: 0, max: 100000,
-        required: 'unless_note', help: 'Angka counter di akhir shift.' },
-      { key: 'sodokan', label: 'Sodokan', unit: 'counter', kind: 'number', min: 0, max: 1000, required: 'no',
-        auto: 'KETIK − KETIK shift sebelumnya' },
+      { key: 'sodokan', label: 'Sodokan', unit: 'cm', kind: 'number', min: 0, max: 30,
+        required: 'unless_note', help: 'Sodokan gulungan kain di akhir shift, dalam cm (0,5; 1; 1,5 …).' },
+      { key: 'sodokan_awal', label: 'Sodokan awal', unit: 'cm', kind: 'number', min: 0, max: 30, required: 'no',
+        auto: 'SODOKAN terakhir mesin ini; isi bila beda (cut off), 0 bila gulungan baru' },
       { key: 'produksi', label: 'Meter', unit: 'm', kind: 'number', min: 0, max: 5000, required: 'no',
-        auto: 'tabel SODOKAN (kain, lebar mesin, sodokan)', typedCalc: 'typed' },
+        auto: 'MT(SODOKAN) − MT(SODOKAN awal) dari tabel SODOKAN', typedCalc: 'typed' },
       note
     ],
-    fixed: { rpm_target: SHUTTLE_RPM, jml_kain: 1 },
-    notApplicable: ['rpm', 'ketik_prod', 'ketik_rpm', 'hit_rpm', 'eff', 'pl', 'cmpx_pl', 'pp', 'cmpx_pp']
+    fixed: { jml_kain: 1 },
+    notApplicable: ['rpm', 'ketik', 'ketik_prod', 'ketik_rpm', 'hit_rpm', 'eff', 'pl', 'cmpx_pl', 'pp', 'cmpx_pp']
   }
 };
 
@@ -104,6 +106,48 @@ export const formOf = (family) => {
     beam: t.beam ?? null, notApplicable: t.notApplicable };
 };
 
+/** Target RPM of a shuttle loom by its type, as UJM's SODOKAN PER SHIFT sheet prices it. */
+const SHUTTLE_RPM_BY_TYPE = { 56: 167, 75: 150, 562: 140, 752: 140 };
+
+/** 56 → 167, 75 → 150, 562 and 752 → 140; any other type the registry's, else the old flat 165. */
+export const shuttleRpm = (type_mc, fallback = null) =>
+  SHUTTLE_RPM_BY_TYPE[widthOf(type_mc)] ?? (Number(fallback) || SHUTTLE_RPM);
+
+/** A SODOKAN reading as the table is keyed: cm to 2 places. */
+export const cmKey = (cm) => Math.round(Number(cm) * 100) / 100;
+
+/**
+ * Metres on the roll at a SODOKAN reading, from the fabric's table (a Map
+ * keyed "kode|width|cm"); width 0 is a table for every loom width, as UJM's
+ * VLOOKUP SODOKAN is. A reading of 0 is an empty roll. null when the table
+ * has no such reading.
+ */
+export function rollMeter(tables, kode_kain, width, cm) {
+  if (cm === null || cm === undefined) return null;
+  const k = cmKey(cm);
+  const m = tables.get(`${kode_kain}|${width}|${k}`) ?? tables.get(`${kode_kain}|0|${k}`);
+  if (m === undefined) return k === 0 ? 0 : null;
+  return Number(m);
+}
+
+/**
+ * METER of a shift from the metres on the roll now and at the start of the
+ * shift. Less than at the start means the roll was cut and a new one begun,
+ * so the shift wove what is on the new roll.
+ */
+export function shuttleMeter(mNow, mAwal) {
+  if (mNow === null || mAwal === null) return null;
+  const d = mNow - mAwal;
+  return Math.round((d < 0 ? mNow : d) * 100) / 100;
+}
+
+/** A shift's METER from its two readings, or null where the table lacks one. */
+export function shuttleOutput(tables, kode_kain, type_mc, sodokan, sodokan_awal) {
+  if (sodokan === null || sodokan === undefined || sodokan_awal === null || sodokan_awal === undefined) return null;
+  const width = widthOf(type_mc);
+  return shuttleMeter(rollMeter(tables, kode_kain, width, sodokan), rollMeter(tables, kode_kain, width, sodokan_awal));
+}
+
 /**
  * A saved row's metres worked out again from its own readings with the
  * current formula, or null where it cannot be (a reading missing, no line in
@@ -111,11 +155,8 @@ export const formOf = (family) => {
  */
 export function outputOf(row, tables = null) {
   if (row.family === 'shuttle') {
-    if (row.sodokan === null || row.sodokan === undefined) return null;
-    const sod = Math.round(Number(row.sodokan) * 100) / 100;
-    if (sod === 0) return 0;
-    const width = Number(/(\d+)\s*$/.exec(row.type_mc ?? '')?.[1]) || null;
-    return tables?.get(`${row.kode_kain}|${width}|${sod}`) ?? null;
+    return shuttleOutput(tables ?? new Map(), row.kode_kain, row.type_mc,
+      row.sodokan === null ? null : Number(row.sodokan), row.sodokan_awal === null ? null : Number(row.sodokan_awal));
   }
   if (row.ketik_prod === null || row.ketik_prod === undefined) return null;
   const ketik = Number(row.ketik_prod);

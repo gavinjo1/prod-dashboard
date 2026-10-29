@@ -185,8 +185,10 @@ export async function loadCharts() {
 
   const gRange = rangeFor(state.groupRange);
   const sRange = rangeFor(state.shiftRange);
-  const [groups, shifts, stops] = await Promise.all([
-    api('breakdown/group', gRange), api('breakdown/shift', sRange), api('stoppages')
+  const [groups, shifts, run] = await Promise.all([
+    api('breakdown/group', gRange), api('breakdown/shift', sRange),
+    // A day someone picked; otherwise the server takes the last day with metres.
+    api('running', { to: state.toPicked ? state.to : '' })
   ]);
   if (!isCurrent('charts', ticket)) return;
 
@@ -240,14 +242,19 @@ export async function loadCharts() {
     ]
   });
 
-  barChart($('#chartStop'), stops, {
-    value: (d) => Number(d.entries),
+  // Looms that wove on one day: the day picked, else the last day with metres.
+  $('#chartRunNote').textContent = !run.tgl ? '' : [
+    `${nb(fmt.day(run.tgl))}${run.chosen ? '' : ' (hari terakhir diisi)'}`,
+    `${fmt.int(run.running)} dari ${fmt.int(run.entered)} mesin jalan`
+  ].join(' · ');
+  barChart($('#chartRun'), run.shifts.map((d) => ({ ...d, label: `Shift ${d.label}` })), {
+    value: (d) => Number(d.running),
     format: fmt.int,
-    labelWidth: 108,
+    labelWidth: 64,
     tipRows: (d) => [
-      ['Shift terdampak', fmt.int(d.entries)],
-      ['Mesin', fmt.int(d.machines)],
-      ['Output shift itu', fmt.num(d.produksi) + ' m']
+      ['Jalan', fmt.int(d.running)],
+      ['Berhenti / 0 m', fmt.int(d.stopped)],
+      ['Output', fmt.num(d.produksi) + ' m']
     ]
   });
 }

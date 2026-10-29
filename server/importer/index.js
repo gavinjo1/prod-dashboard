@@ -12,6 +12,7 @@ import { FIELD_LABEL, diagnose } from './diagnose.js';
 import { readTypeLegend, upsertTypes } from './legend.js';
 import { readSodokanTable, upsertSodokan } from './sodokan.js';
 import { FAMILIES, buildRows, dedupe, differingRepeats, planRows, recordConflicts, shuttleGaps, upsert } from './rows.js';
+import { shuttleOutput } from '../lib/machine-types.js';
 export { isSupported } from './workbook.js';
 export { FAMILIES } from './rows.js';
 
@@ -45,6 +46,8 @@ export async function importBuffer(buffer, fileName,
   // The shuttle order list has no date of its own; it is recorded as of the
   // last day of shuttle production in the same file.
   let shuttleLastDay = null;
+  // Every shuttle row read, for the METER check once the SODOKAN table is in.
+  const shuttleRows = [];
 
   try {
     // One batch per uploaded file, covering every sheet in it: undoing half a
@@ -72,7 +75,7 @@ export async function importBuffer(buffer, fileName,
       // Rapier its looms would mix with theirs. Refused, not guessed.
       if (found.dataset === 'shuttle' && family !== 'shuttle') {
         results.push({ sheet: name, dataset: 'shuttle', status: 'error',
-          message: 'Sheet ini laporan Shuttle (KETIK, SODOKAN, METER). Pilih Shuttle dulu, lalu upload lagi.' });
+          message: 'Sheet ini laporan Shuttle (SODOKAN, MT / SHIFT). Pilih Shuttle dulu, lalu upload lagi.' });
         continue;
       }
       // Shuttle rows are production rows, in the same table.
@@ -88,6 +91,7 @@ export async function importBuffer(buffer, fileName,
       let warning = found.dataset === 'shuttle' ? shuttleGaps(records) : null;
       if (found.dataset === 'shuttle') {
         for (const r of records) if (!shuttleLastDay || r.tgl > shuttleLastDay) shuttleLastDay = r.tgl;
+        shuttleRows.push(...records);
       }
       const keyOf = table === 'production'
         ? (r) => `${family}|${r.tgl}|${r.shift}|${r.no_mc}`
@@ -173,18 +177,20 @@ export async function importBuffer(buffer, fileName,
       }
 
       // The shuttle SODOKAN table, so a shift typed in by hand gets its METER
-      // the way the workbook works it out.
+      // the way the workbook works it out — and the file's METER checked against it.
       if (family === 'shuttle') {
         for (const name of wb.SheetNames) {
           if (only && !only.includes(name)) continue;
           let table;
           try { table = readSodokanTable(wb.Sheets[name]); } catch { continue; }
           if (!table.entries.length) continue;
-          const warning = table.doubled.size
-            ? 'Tabel SODOKAN punya baris ganda untuk ' +
-              [...table.doubled].map(([f, n]) => `${f} (${n} ukuran)`).join(', ') +
-              '. Excel menjumlahkan keduanya, jadi METER kain itu dobel.'
-            : null;
+          const warning = !table.doubled.size ? null
+            : table.vlookup
+              ? `Tabel SODOKAN punya sodokan ganda untuk ${[...table.doubled.keys()].join(', ')}. ` +
+                'VLOOKUP memakai yang pertama; itu juga yang disimpan.'
+              : 'Tabel SODOKAN punya baris ganda untuk ' +
+                [...table.doubled].map(([f, n]) => `${f} (${n} ukuran)`).join(', ') +
+                '. Excel menjumlahkan keduanya, jadi METER kain itu dobel.';
           try {
             await snapshot(client, batchId, 'shuttle_sodokan', table.entries);
             const written = await upsertSodokan(client, table.entries, fileName);
@@ -194,6 +200,14 @@ export async function importBuffer(buffer, fileName,
             fail(name, err);
           }
           break;
+        }
+        if (shuttleRows.length) {
+          try {
+            const check = await checkShuttleMeter(client, shuttleRows);
+            if (check) results.push(check);
+          } catch (err) {
+            fail('(cek METER Shuttle)', err);
+          }
         }
       }
 
@@ -328,4 +342,37 @@ export function previewBuffer(buffer, fileName) {
     const { records } = buildRows(found);
     return { sheet: name, dataset: found.dataset, rows: records.length };
   });
+}
+
+/**
+ * The file's METER against MT(SODOKAN) − MT(SODOKAN awal) from the SODOKAN
+ * table. Nothing is changed here — the imported METER stays as the mill
+ * wrote it — but every fabric whose shifts disagree is named. The usual cause
+ * is a PAGI whose CUT OFF was left blank, which the sheet counts as a whole roll.
+ */
+async function checkShuttleMeter(client, rows) {
+  const { rows: t } = await client.query('SELECT kode_kain, width, cm, meter FROM shuttle_sodokan');
+  const tables = new Map(t.map((r) => [`${r.kode_kain}|${r.width}|${Number(r.cm)}`, Number(r.meter)]));
+  const missing = new Map();
+  const differ = new Map();
+  for (const r of rows) {
+    if (r.sodokan === null || r.sodokan_awal === null || !r.kode_kain) continue;
+    const expect = shuttleOutput(tables, r.kode_kain, r.type_mc, r.sodokan, r.sodokan_awal);
+    if (expect === null) {
+      missing.set(r.kode_kain, (missing.get(r.kode_kain) ?? 0) + 1);
+    } else if (r.produksi !== null && Math.abs(expect - r.produksi) > 0.05) {
+      const d = differ.get(r.kode_kain) ?? [0, 0, 0];
+      differ.set(r.kode_kain, [d[0] + 1, d[1] + r.produksi, d[2] + expect]);
+    }
+  }
+  if (!missing.size && !differ.size) return null;
+  const m = (v) => v.toLocaleString('id-ID', { maximumFractionDigits: 1 });
+  const sorted = (map) => [...map].sort(([a], [b]) => a.localeCompare(b));
+  const notes = [
+    ...sorted(missing).map(([k, n]) => `${k}: ${n} shift sodokannya tidak ada di tabel SODOKAN — Input Shift akan menolak sodokan itu`),
+    ...sorted(differ).map(([k, [n, f, c]]) =>
+      `${k}: ${n} shift METER di file beda dari MT(SODOKAN) − MT(SODOKAN awal) (file ${m(f)} m, dihitung ${m(c)} m)`)
+  ];
+  return { sheet: '(cek METER Shuttle)', dataset: 'sodokan', status: 'ok', read: rows.length, written: 0, skipped: 0,
+    notes, warning: 'METER yang diimport tetap seperti di file. ' + notes.join('; ') + '.' };
 }

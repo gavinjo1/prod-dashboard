@@ -401,12 +401,18 @@ WHERE l.batch_id IS NULL AND l.status = 'ok';
 ALTER TABLE production ADD COLUMN IF NOT EXISTS ketik   numeric;
 ALTER TABLE production ADD COLUMN IF NOT EXISTS sodokan numeric;
 
--- The shuttle workbook's SODOKAN table: metres of fabric per advance of the
--- counter (CM), by fabric and loom width. A shift typed in by hand finds its
--- METER here, as the daily sheets do with SUMIF.
+-- UJM's SODOKAN PER SHIFT measures the roll instead: SODOKAN is the roll's
+-- reading (cm) at the end of the shift, and METER is the table's metres at
+-- that reading less those at the start — the loom's last reading, a CUT OFF,
+-- or 0 for a new roll — kept here. KETIK is no longer read.
+ALTER TABLE production ADD COLUMN IF NOT EXISTS sodokan_awal numeric;
+
+-- The shuttle SODOKAN table: metres of fabric on the roll at each SODOKAN
+-- reading (CM), by fabric. Width 0 is a table for every loom width, as UJM's
+-- VLOOKUP SODOKAN is; older workbooks kept one per width.
 CREATE TABLE IF NOT EXISTS shuttle_sodokan (
   kode_kain   text        NOT NULL,
-  width       integer     NOT NULL,   -- loom width: 75 or 56
+  width       integer     NOT NULL,   -- loom width: 75 or 56; 0 for every width
   cm          numeric     NOT NULL,   -- SODOKAN, rounded to 2 places
   meter       numeric     NOT NULL,
   source_file text,

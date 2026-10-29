@@ -17,7 +17,7 @@ import { windows } from './filters.js';
  * it is typed, saying when something looks wrong:
  *
  *   ⚠ above the loom's capability    ↺ counter was reset
- *   ✕ cannot be worked out (no SODOKAN line, no pick) — must be typed
+ *   ✕ cannot be worked out (no SODOKAN in the table, no pick) — must be typed
  *
  * Rapier takes the EFFISIENSI RAPIER day sheet's columns — RPM, EFF, PL,
  * CMPX, PP, CMPX, COUNT (the counter), KET — and, folded away until asked
@@ -82,12 +82,34 @@ function valueOf(m, field) {
   if (CARD.includes(field)) return dec(m.card?.[field]);
   if (field.startsWith('b_')) return beamShown(m, field.slice(2));
   if (!s) return '';
-  if (field === 'ketik') return dec(si.data.family === 'shuttle' ? s.ketik : s.ketik_prod);
+  if (field === 'ketik') return dec(s.ketik_prod);
   if (field === 'rpm') return dec(s.rpm);
   if (field === 'ket_bb') return s.ket_bb ?? '';
-  // Shuttle SODOKAN and METER show as saved only when they were typed over;
-  // otherwise they are worked out again from KETIK below.
+  if (field === 'sodokan') return dec(s.sodokan);
+  // Shuttle's start and METER show as saved only when they were typed over;
+  // otherwise they are worked out again from the readings below.
+  if (field === 'sodokan_awal') {
+    const chained = awalOf(m, s.kode_kain);
+    return s.sodokan_awal !== null && s.sodokan_awal !== undefined && Number(s.sodokan_awal) !== chained ? dec(s.sodokan_awal) : '';
+  }
+  if (field === 'produksi') return s.calc === 'typed' ? dec(s.produksi) : '';
   return '';
+}
+
+/** Shuttle: where this shift's reading starts — the loom's last one, or 0 when the fabric changed (a new roll). */
+function awalOf(m, kode) {
+  const p = m.prev;
+  if (!p || p.sodokan === null || p.sodokan === undefined) return null;
+  if (kode && p.kode_kain && p.kode_kain !== kode) return 0;
+  return Number(p.sodokan);
+}
+
+/** Shuttle: metres on the roll at a SODOKAN reading, from the fabric's table; null when it has none. */
+function rollMeter(kode, width, cm) {
+  const t = si.data.sodokan;
+  const v = t[`${kode}|${width}|${r2(cm)}`] ?? t[`${kode}|0|${r2(cm)}`];
+  if (v === undefined) return r2(cm) === 0 ? 0 : null;
+  return v;
 }
 
 /** Capability of one machine-shift at its target RPM, as the Produksi tab has it. */
@@ -105,29 +127,39 @@ function derive(m) {
   const fam = si.data.family;
   const mo = String(valueOf(m, 'mo')).trim();
   const order = si.data.orders[mo];
-  const kode = order?.kode_kain ?? (mo === m.mo ? m.kode_kain : null);
+  // The server sends an empty MO as none: the loom's own fabric carries on.
+  const kode = order?.kode_kain ?? (mo === (m.mo ?? '') ? m.kode_kain : null);
   const pick = order?.pick ?? null;
-  const ketik = numOf(valueOf(m, 'ketik'));
+  const ketik = fam === 'shuttle' ? null : numOf(valueOf(m, 'ketik'));
   const note = String(valueOf(m, 'ket_bb')).trim();
-  const out = { kode, pick, ketik, warn: [], bad: null, output: null, sodokan: null };
+  const out = { kode, pick, ketik, warn: [], bad: null, output: null, sodokan: null, awal: null };
 
   if (Number.isNaN(ketik)) { out.bad = 'KETIK bukan angka'; return out; }
   if (fam === 'shuttle') {
-    const prev = m.prev?.ketik === null || m.prev?.ketik === undefined ? null : Number(m.prev.ketik);
-    const typedSod = numOf(valueOf(m, 'sodokan'));
+    // METER = MT(SODOKAN) − MT(SODOKAN awal) from the fabric's table; less than
+    // nothing means the roll was cut, so the shift wove what is on the new one.
+    const sod = numOf(valueOf(m, 'sodokan'));
+    const typedAwal = numOf(valueOf(m, 'sodokan_awal'));
     const typedMeter = numOf(valueOf(m, 'produksi'));
-    if (typedSod !== null) out.sodokan = typedSod;
-    else if (ketik !== null && prev !== null) {
-      out.sodokan = r2(prev <= ketik ? ketik - prev : ketik);
-      if (prev > ketik) out.warn.push('↺ counter direset');
-    } else if (ketik !== null) out.bad = 'KETIK shift sebelumnya tidak ada — isi sodokan';
+    if ([sod, typedAwal, typedMeter].some(Number.isNaN)) { out.bad = 'sodokan dan meter harus angka'; return out; }
+    out.sodokan = sod;
+    out.awal = sod === null ? null : typedAwal ?? awalOf(m, kode);
     if (typedMeter !== null) out.output = typedMeter;
-    else if (out.sodokan !== null) {
-      const table = si.data.sodokan[`${kode}|${m.width}`];
-      const hit = out.sodokan === 0 ? [0, 0] : table?.find(([cm]) => cm === r2(out.sodokan));
-      if (hit) out.output = hit[1];
-      else out.bad = table ? `tabel SODOKAN tidak punya sodokan ${one(out.sodokan)} — isi meter`
-        : `tabel SODOKAN belum punya ${kode ?? 'kain ini'} / MC ${m.width} — isi meter`;
+    else if (sod !== null) {
+      if (out.awal === null) out.bad = 'belum ada sodokan sebelumnya — isi sodokan awal (0 bila gulungan baru)';
+      else if (!kode) out.bad = 'MO belum ada, jadi kain dan meter tidak diketahui';
+      else {
+        const now = rollMeter(kode, m.width, sod);
+        const start = rollMeter(kode, m.width, out.awal);
+        if (now === null || start === null) {
+          const gone = [...new Set([sod, out.awal])].filter((c) => rollMeter(kode, m.width, c) === null);
+          out.bad = `tabel SODOKAN ${kode} tidak punya ${gone.map((c) => `${dec(c)} cm`).join(' dan ')} — periksa, atau isi meter`;
+        } else {
+          const d = now - start;
+          out.output = r2(d < 0 ? now : d);
+          if (d < 0) out.warn.push('↺ kain dipotong');
+        }
+      }
     }
   } else if (ketik !== null) {
     if (fam === 'rapier' && sulzer(m)) {
@@ -162,7 +194,7 @@ function derive(m) {
   return out;
 }
 
-const filled = (m) => ['ketik', 'ket_bb', 'sodokan', 'produksi'].some((f) => String(valueOf(m, f)).trim() !== '');
+const filled = (m) => ['ketik', 'ket_bb', 'sodokan', 'sodokan_awal', 'produksi'].some((f) => String(valueOf(m, f)).trim() !== '');
 
 function statusOf(m, d) {
   if (si.errors.has(m.no_mc)) return { cls: 'is-bad', text: si.errors.get(m.no_mc) };
@@ -206,7 +238,6 @@ function cellsOf(m) {
   const fam = si.data.family;
   const d = derive(m);
   const st = statusOf(m, d);
-  const prevKetik = m.prev?.ketik ?? null;
   const common = `
     <td class="mc-name">${esc(m.no_mc)}</td>
     <td class="muted">${esc(fam === 'shuttle' ? (m.kelompok_mesin ?? '') : (m.type_mc ?? ''))}</td>
@@ -218,9 +249,11 @@ function cellsOf(m) {
     <td class="si-st ${st.cls}">${esc(st.text)}</td>${actionsOf(m)}`;
   if (fam === 'shuttle') {
     return `${common}
-      <td class="num muted">${prevKetik === null ? '—' : fmt.num(prevKetik)}</td>
-      <td>${input(m, 'ketik', 'si-num', 'inputmode="decimal"')}</td>
-      <td>${input(m, 'sodokan', 'si-num', `inputmode="decimal" placeholder="${esc(one(d.sodokan))}"`)}</td>
+      <td class="num muted" title="${esc(m.prev?.sodokan == null ? 'Belum ada sodokan sebelumnya'
+        : `Shift ${m.prev.shift} ${fmt.day(m.prev.tgl)}${m.prev.kode_kain ? ` · ${m.prev.kode_kain}` : ''}`)}">${
+        m.prev?.sodokan == null ? '—' : fmt.num(m.prev.sodokan)}</td>
+      <td>${input(m, 'sodokan_awal', 'si-num si-sm', `inputmode="decimal" placeholder="${esc(one(d.awal))}"`)}</td>
+      <td>${input(m, 'sodokan', 'si-num', 'inputmode="decimal"')}</td>
       <td>${input(m, 'produksi', 'si-num', `inputmode="decimal" placeholder="${esc(one(d.output))}"`)}</td>
       ${tail}`;
   }
@@ -276,7 +309,10 @@ function paintTable() {
     <th title="Jumlah kain sekaligus: COUNT × kain = output">× Kain</th><th class="num">Output (m)</th><th class="num">Kapasitas</th><th>KET</th><th>Status</th><th></th></tr>` : `<tr>
     <th>Mesin</th><th>${fam === 'shuttle' ? 'Line' : 'Tipe'}</th><th>MO</th><th>Kain</th>
     ${fam === 'shuttle'
-    ? '<th class="num">Ketik sebelum</th><th>Ketik</th><th>Sodokan</th><th>Meter</th>'
+    ? '<th class="num" title="Sodokan terakhir mesin ini (arahkan mouse untuk shiftnya)">Sodokan sebelum</th>'
+      + '<th title="Kosong: sodokan sebelum. Isi bila beda (cut off), 0 bila gulungan baru">Sodokan awal</th>'
+      + '<th title="Sodokan gulungan kain di akhir shift (cm)">Sodokan</th>'
+      + '<th title="MT(sodokan) − MT(sodokan awal) dari tabel SODOKAN; kosongkan untuk dihitung">Meter</th>'
     : '<th>Ketik prod</th><th>RPM</th><th title="Jumlah kain sekaligus: ketik prod × kain = output">× Kain</th><th class="num">Output (m)</th>'}
     <th class="num">Kapasitas</th><th>Catatan</th><th>Status</th><th></th></tr>`;
   const rows = visible();
@@ -303,7 +339,7 @@ function refreshRow(no_mc) {
     kain.title = diff ? `Data Mesin ×${m.jml_kain_mc}; shift ini ×${kainOf(m)}` : `Jumlah kain sekaligus (Data Mesin ×${m.jml_kain_mc ?? '?'})`;
   }
   if (si.data.family === 'shuttle') {
-    tr.querySelector('[data-f="sodokan"]').placeholder = one(d.sodokan);
+    tr.querySelector('[data-f="sodokan_awal"]').placeholder = one(d.awal);
     tr.querySelector('[data-f="produksi"]').placeholder = one(d.output);
   }
   if (si.data.family === 'rapier') {
@@ -463,10 +499,18 @@ $('#siTable').addEventListener('click', async (e) => {
     si.edits.delete(no_mc);
     si.errors.delete(no_mc);
     await loadShiftInput();
+    const chained = chainedItems(d.chained);
     $('#siResult').innerHTML = `<div class="result result-ok"><div class="result-title">${
-      esc(`${no_mc} shift ${shift} ${fmt.day(tgl)} dihapus.`)}</div></div>`;
+      esc(`${no_mc} shift ${shift} ${fmt.day(tgl)} dihapus.`)}</div>${
+      chained ? `<p>Shift berikutnya ikut dihitung ulang karena sodokan berubah:</p><ul>${chained}</ul>` : ''}</div>`;
   }
 });
+
+/** Shuttle: a changed reading also moves where the loom's next shift starts. */
+const chainedItems = (chained) => (chained ?? []).map((c) => (c.status === 'periksa'
+  ? `<li class="import-warn">⚠ ${esc(c.no_mc)} shift ${esc(c.shift)} ${esc(fmt.day(c.tgl))}: ${esc(c.message)}</li>`
+  : `<li>${esc(c.no_mc)} shift ${esc(c.shift)} ${esc(fmt.day(c.tgl))}: sodokan awal ${fmt.num(c.awal.before)} → ${
+    fmt.num(c.awal.after)}, meter ${fmt.num(c.meter.before)} → ${fmt.num(c.meter.after)}</li>`)).join('');
 
 /* ---- saving ---- */
 
@@ -477,9 +521,11 @@ $('#siSave').addEventListener('click', async () => {
   const changed = (no_mc, beam) => Object.keys(si.edits.get(no_mc)).some((f) => f.startsWith('b_') === beam);
   const rows = [...si.edits.keys()].filter((no_mc) => changed(no_mc, false)).map((no_mc) => {
     const m = machineOf(no_mc);
-    const row = { no_mc, mo: valueOf(m, 'mo'), ketik: valueOf(m, 'ketik'), ket_bb: valueOf(m, 'ket_bb') };
-    if (fam === 'shuttle') Object.assign(row, { sodokan: valueOf(m, 'sodokan'), produksi: valueOf(m, 'produksi') });
-    else Object.assign(row, { rpm: valueOf(m, 'rpm'), jml_kain: valueOf(m, 'jml_kain') });
+    const row = { no_mc, mo: valueOf(m, 'mo'), ket_bb: valueOf(m, 'ket_bb') };
+    if (fam === 'shuttle') {
+      Object.assign(row, { sodokan: valueOf(m, 'sodokan'), sodokan_awal: valueOf(m, 'sodokan_awal'),
+        produksi: valueOf(m, 'produksi') });
+    } else Object.assign(row, { ketik: valueOf(m, 'ketik'), rpm: valueOf(m, 'rpm'), jml_kain: valueOf(m, 'jml_kain') });
     if (fam === 'rapier') {
       for (const f of CARD) row[f] = valueOf(m, f);
       // A CMPX filled in automatically before is sent empty, so it is worked
@@ -528,14 +574,9 @@ $('#siSave').addEventListener('click', async () => {
     si.errors.clear();
     si.editing.clear();
     await loadShiftInput();
-    // Shuttle: a corrected counter also changes the next shift's SODOKAN.
-    const chained = (d.chained ?? []).map((c) => (c.status === 'periksa'
-      ? `<li class="import-warn">⚠ ${esc(c.no_mc)} shift ${esc(c.shift)} ${esc(fmt.day(c.tgl))}: ${esc(c.message)}</li>`
-      : `<li>${esc(c.no_mc)} shift ${esc(c.shift)} ${esc(fmt.day(c.tgl))}: sodokan ${fmt.num(c.sodokan.before)} → ${
-        fmt.num(c.sodokan.after)}, meter ${fmt.num(c.meter.before)} → ${fmt.num(c.meter.after)}${
-        c.message ? ` <span class="import-warn">(${esc(c.message)})</span>` : ''}</li>`)).join('');
+    const chained = chainedItems(d.chained);
     $('#siResult').innerHTML = `<div class="result result-ok"><div class="result-title">${esc(msg)}</div>${
-      chained ? `<p>Shift berikutnya ikut dihitung ulang karena ketik dikoreksi:</p><ul>${chained}</ul>` : ''}</div>`;
+      chained ? `<p>Shift berikutnya ikut dihitung ulang karena sodokan berubah:</p><ul>${chained}</ul>` : ''}</div>`;
   } catch (err) {
     $('#siResult').innerHTML = `<div class="result result-err"><div class="result-title">Tidak tersimpan</div><p>${esc(err.message)}</p></div>`;
   } finally {

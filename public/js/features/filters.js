@@ -53,11 +53,12 @@ $('#filtersToggle').addEventListener('click', () => {
 });
 
 $('#fFrom').addEventListener('change', (e) => { state.from = e.target.value; refresh(); });
-$('#fTo').addEventListener('change', (e) => { state.to = e.target.value; refresh(); });
+$('#fTo').addEventListener('change', (e) => { state.to = e.target.value; state.toPicked = !!state.to; refresh(); });
 
 $('#btnReset').addEventListener('click', async () => {
   for (const k of ['shift', 'group', 'type', 'machine', 'fabric', 'mo']) state[k] = [];
   state.from = state.to = '';
+  state.toPicked = false;
   state.search = '';
   $('#mcSearch').value = '';
   await loadFilters();
